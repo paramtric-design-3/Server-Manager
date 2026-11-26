@@ -194,7 +194,7 @@ class Ark {
     // players history for the graph (null = unknown)
     const v = num(j.players);
     const last = this.history[this.history.length - 1];
-    if (!last || last.v !== v || Date.now() - last.t > 10 * 60 * 1000) {
+    if (!last || last.v !== v || Date.now() - last.t > 5 * 60 * 1000) {
       this.history.push({ t: Date.now(), v });
       const cut = Date.now() - HISTORY_MS;
       while (this.history.length > 2 && this.history[1].t < cut) this.history.shift();
@@ -216,9 +216,12 @@ class Ark {
     const r = await this.ssh('history', 20000);
     try {
       const pts = JSON.parse((r.out || '').trim().split('\n').pop()).points;
-      if (Array.isArray(pts) && pts.length >= 2) {
-        this.history = pts.filter(p => Array.isArray(p) && Number.isFinite(p[0])).map(p => ({ t: p[0] * 1000, v: num(p[1]) })).sort((a, b) => a.t - b.t);
-        if (this.j) this.history.push({ t: Date.now(), v: num(this.j.players) });
+      if (Array.isArray(pts) && pts.length) {
+        // combine the NAS's points (also from while this PC was off) with this app's own, finer ones
+        const nas = pts.filter(p => Array.isArray(p) && Number.isFinite(p[0])).map(p => ({ t: p[0] * 1000, v: num(p[1]) }));
+        const cut = Date.now() - HISTORY_MS;
+        const all = [...nas, ...this.history].filter(x => x.t > cut).sort((a, b) => a.t - b.t);
+        this.history = all.filter((x, i) => i === 0 || x.t - all[i - 1].t > 30000 || x.v !== all[i - 1].v);
         this.saveHistory(); this.emit();
       }
     } catch { /* keep the local history */ }

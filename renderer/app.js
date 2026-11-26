@@ -177,33 +177,33 @@ function graph() {
   const w = Math.max(200, box.clientWidth), h = box.clientHeight || 150;
   const top = 10, base = h - 22;
   const max = Math.max(1, (A && A.maxPlayers) || 5);
-  const now = Date.now(), from = now - range * 3600e3, N = 24;
-  const hist = ((A && A.history) || []).filter(p => Number.isFinite(p.t)).sort((a, b) => a.t - b.t);
-  const pts = [];
-  let i = 0, last = null;
-  while (i < hist.length && hist[i].t <= from) { last = hist[i].v; i++; }
-  for (let b = 0; b <= N; b++) {
-    const end = from + (b / N) * (now - from);
-    let peak = last;
-    while (i < hist.length && hist[i].t <= end) { last = hist[i].v; if (last != null && (peak == null || last > peak)) peak = last; i++; }
-    pts.push(peak);
-  }
-  if (A && A.players != null) pts[N] = A.players;
-  const x = b => 6 + (b / N) * (w - 16);
+  const now = Date.now(), from = now - range * 3600e3;
+  const GAP = 75 * 60000;   // longer than this between two measurements: no line (nothing known in between)
+  // the real measurements in the window, plus the one just before it, plus the live value now
+  const all = ((A && A.history) || []).filter(p => Number.isFinite(p.t) && p.t <= now).sort((a, b) => a.t - b.t);
+  let pts = all.filter(p => p.t >= from);
+  const before = all.filter(p => p.t < from).pop();
+  if (before && before.v != null && (pts[0] ? pts[0].t : now) - before.t <= GAP) pts.unshift({ t: from, v: before.v });
+  if (A && A.players != null) pts.push({ t: now, v: A.players });
+  const x = t => 6 + ((t - from) / (now - from)) * (w - 16);
   const y = v => base - (Math.min(v, max) / max) * (base - top);
-  let line = '', area = '', run = [];
-  const flush = () => {
-    if (run.length > 1) {
-      const d = run.map(([b, v], j) => `${j ? 'L' : 'M'}${x(b).toFixed(1)} ${y(v).toFixed(1)}`).join('');
-      line += `<path class="line" d="${d}"/>`;
-      area += `<path class="area" d="${d}L${x(run[run.length - 1][0]).toFixed(1)} ${base}L${x(run[0][0]).toFixed(1)} ${base}Z"/>`;
-    }
-    run = [];
-  };
-  pts.forEach((v, b) => { if (v == null) flush(); else run.push([b, v]); });
-  flush();
-  const lastV = pts[N];
-  const end = lastV != null ? `<circle class="end" cx="${x(N).toFixed(1)}" cy="${y(lastV).toFixed(1)}" r="6"/>` : '';
+  // runs of known values without long gaps
+  const runs = []; let run = [];
+  for (const p of pts) {
+    if (p.v == null) { if (run.length) runs.push(run); run = []; continue; }
+    if (run.length && p.t - run[run.length - 1].t > GAP) { runs.push(run); run = []; }
+    run.push(p);
+  }
+  if (run.length) runs.push(run);
+  let line = '', area = '';
+  for (const r of runs) {
+    // a single measurement still shows as a short level line
+    const seg = r.length === 1 ? [{ t: Math.max(from, r[0].t - 10 * 60000), v: r[0].v }, r[0]] : r;
+    const d = seg.map((p, j) => `${j ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join('');
+    line += `<path class="line" d="${d}"/>`;
+    area += `<path class="area" d="${d}L${x(seg[seg.length - 1].t).toFixed(1)} ${base}L${x(seg[0].t).toFixed(1)} ${base}Z"/>`;
+  }
+  const end = A && A.players != null ? `<circle class="end" cx="${x(now).toFixed(1)}" cy="${y(A.players).toFixed(1)}" r="6"/>` : '';
   const ticks = Array.from({ length: 31 }, (_, k) => `<path class="tick" d="M${(6 + k / 30 * (w - 16)).toFixed(1)} ${h - 12}v7"/>`).join('');
   const empty = !line ? `<text class="empty" x="${w / 2}" y="${base / 2 + 10}" text-anchor="middle">No player data for this period yet</text>` : '';
   box.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-label="Players over the last ${range} hours">
