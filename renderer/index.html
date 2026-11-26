@@ -86,17 +86,14 @@
         </div>
       </header>
 
-      <section class="card form">
-        <div class="ftitle">Connection</div>
-        <div class="muted" id="connLine">Not connected</div>
-        <label class="field"><span>NAS user</span><input id="user" spellcheck="false" placeholder="the SSH user for ark-ctl"></label>
-        <label class="field"><span>NAS address</span><input id="host" spellcheck="false" placeholder="e.g. 192.168.1.10"></label>
-        <div id="setup">
-          <p class="note"><b>1.</b> Create this PC's key. The NAS command is copied to your clipboard: paste it in your SSH window on the NAS.</p>
-          <div class="frow"><span id="keyState" class="muted">No key yet</span><button class="pill dark" id="key">Create key</button></div>
-          <p class="note"><b>2.</b> Check the NAS's own key. Trust it only when the fingerprint is exactly the one SSH showed you on the NAS.</p>
-          <div class="frow"><span id="fp" class="mono muted">Not checked</span><button class="pill" id="scan">Check NAS key</button><button class="pill dark" id="trust" hidden>Trust</button></div>
-        </div>
+      <section class="card form" id="joinCard">
+        <div class="ftitle">Join</div>
+        <div class="frow"><span class="mono" id="join">–</span><button class="pill" id="copyJoin">Copy</button></div>
+      </section>
+
+      <section class="card form" id="logCard">
+        <div class="ftitle">NAS log <button class="link" id="refreshLog">Refresh</button></div>
+        <pre class="log" id="log">–</pre>
       </section>
 
       <section class="card form" id="autoCard">
@@ -119,19 +116,24 @@
       </section>
 
       <section class="card form">
-        <div class="ftitle">Join</div>
-        <div class="frow"><span class="mono" id="join">–</span><button class="pill" id="copyJoin">Copy</button></div>
-      </section>
-
-      <section class="card form">
-        <div class="ftitle">NAS log <button class="link" id="refreshLog">Refresh</button></div>
-        <pre class="log" id="log">–</pre>
-      </section>
-
-      <section class="card form">
         <div class="ftitle">This PC</div>
         <div class="frow"><span>Keep running in the tray when closed</span><label class="switch"><input type="checkbox" id="prefTray"><i></i></label></div>
         <div class="frow"><span>Start with Windows (in the tray)</span><label class="switch"><input type="checkbox" id="prefLogin"><i></i></label></div>
+      </section>
+
+      <section class="card form" id="connCard">
+        <div class="ftitle">Connection <button class="link" id="connToggle" hidden>Change</button></div>
+        <div class="muted" id="connLine">Not connected</div>
+        <div id="connBody">
+        <label class="field"><span>NAS user</span><input id="user" spellcheck="false" placeholder="the SSH user for ark-ctl"></label>
+        <label class="field"><span>NAS address</span><input id="host" spellcheck="false" placeholder="e.g. 192.168.1.10"></label>
+        <div id="setup">
+          <p class="note"><b>1.</b> Create this PC's key. The NAS command is copied to your clipboard: paste it in your SSH window on the NAS.</p>
+          <div class="frow"><span id="keyState" class="muted">No key yet</span><button class="pill dark" id="key">Create key</button></div>
+          <p class="note"><b>2.</b> Check the NAS's own key. Trust it only when the fingerprint is exactly the one SSH showed you on the NAS.</p>
+          <div class="frow"><span id="fp" class="mono muted">Not checked</span><button class="pill" id="scan">Check NAS key</button><button class="pill dark" id="trust" hidden>Trust</button></div>
+        </div>
+        </div>
       </section>
 
       <section class="card form">

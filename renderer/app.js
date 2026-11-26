@@ -330,7 +330,7 @@ function show(view) {
 $('#openSettings').onclick = () => show('settings');
 $('#back').onclick = () => show('home');
 
-let fpShown = false;
+let fpShown = false, connOpen = false;
 function renderSettings() {
   const st = (A && A.setup) || {};
   const ok = connected();
@@ -340,6 +340,14 @@ function renderSettings() {
     : A.conn === 'connecting' ? 'Connecting…'
     : ok ? `Connected · ${A.name || 'the server'} is ${(LABEL[A.status] || A.status).toLowerCase()}` : (A.error || 'Not connected');
   $('#setup').classList.toggle('hidden', ok && st.hasKey && st.trusted);
+  // once it works, the connection folds away to one line at the bottom; until then it comes first
+  const done = ok && st.hasKey && st.trusted;
+  $('#connBody').classList.toggle('hidden', done && !connOpen);
+  $('#connToggle').hidden = !done;
+  $('#connToggle').textContent = connOpen ? 'Done' : 'Change';
+  $('#connCard').style.order = done ? '' : '-1';
+  $('#joinCard').classList.toggle('hidden', !ok);
+  $('#logCard').classList.toggle('hidden', !ok);
   $('#keyState').textContent = st.hasKey ? 'Key created' : 'No key yet';
   $('#key').textContent = st.hasKey ? 'Copy NAS command' : 'Create key';
   if (!fpShown) $('#fp').textContent = st.trusted ? 'NAS key trusted' : 'Not checked';
@@ -368,6 +376,7 @@ async function loadLog() {
   $('#log').scrollTop = $('#log').scrollHeight;
 }
 $('#refreshLog').onclick = loadLog;
+$('#connToggle').onclick = () => { connOpen = !connOpen; renderSettings(); };
 const commitHost = async () => {
   const host = $('#host').value.trim(), user = $('#user').value.trim();
   if (host === SET.host && user === SET.user) return;
