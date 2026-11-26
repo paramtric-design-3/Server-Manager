@@ -1,10 +1,13 @@
-// Server Manager — main process: one window, the NAS connection (ark.js) and settings.
+// Server Manager — main process: one window, a list of game servers on the NAS, the tray and settings.
 'use strict';
 
 const { app, BrowserWindow, ipcMain, clipboard, shell, nativeImage, Tray, Menu, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { Ark } = require('./ark');
+// One adapter per game type. Each server in the list gets its own instance.
+const ADAPTERS = {
+  ark: { label: 'ARK: Survival Evolved', make: o => new (require('./adapters/ark').Ark)(o) },
+};
 let autoUpdater = null;
 try { ({ autoUpdater } = require('electron-updater')); } catch { /* running from source without it */ }
 
@@ -12,11 +15,23 @@ app.setAppUserModelId('com.fjbc.servermanager');
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // ---------------------------------------------------------------- settings
-const DEFAULTS = { host: '', user: '', bounds: null, tray: true, launchAtLogin: false };   // host and user: filled in by you in Settings
+// servers: [{ id, type, host, user }] (filled in by you in Settings); active: the one on screen
+const DEFAULTS = { servers: [], active: '', bounds: null, tray: true, launchAtLogin: false };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
-  try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) }; } catch { /* first run */ }
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { /* first run */ }
+  settings = { ...DEFAULTS, ...saved };
+  // 1.4 and older had one server as host/user: it becomes the first server in the list
+  if (!Array.isArray(saved.servers)) {
+    settings.servers = [{ id: 'ark-1', type: 'ark', host: saved.host || '', user: saved.user || '' }];
+    delete settings.host; delete settings.user;
+    saveSettings();
+  }
+  settings.servers = settings.servers.filter(x => x && ADAPTERS[x.type] && /^[a-z0-9-]{1,40}$/.test(x.id));
+  if (!settings.servers.length) settings.servers = [{ id: 'ark-1', type: 'ark', host: '', user: '' }];
+  if (!settings.servers.some(x => x.id === settings.active)) settings.active = settings.servers[0].id;
 }
 function saveSettings() {
   try { fs.mkdirSync(path.dirname(settingsFile()), { recursive: true }); fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2)); } catch { /* fine */ }
@@ -53,7 +68,7 @@ function createWindow() {
 }
 
 // ---------------------------------------------------------------- tray icon (bottom right)
-let tray = null, quitting = false, lastSnap = null;
+let tray = null, quitting = false;
 const trayImg = {};
 function trayImage(kind) {
   if (!trayImg[kind]) trayImg[kind] = nativeImage.createFromPath(path.join(__dirname, 'build', `tray-${kind}.png`));
@@ -81,34 +96,47 @@ function showFromTray() {
   win.setBounds({ x: wa.x + wa.width - b.width - 12, y: wa.y + wa.height - b.height - 12, width: b.width, height: Math.min(b.height, wa.height - 24) });
   win.show(); win.focus();
 }
-async function trayAction(action) {
+async function trayAction(id, action) {
+  const srv = servers.get(id);
   const confirmText = { shutdown: 'Shut down the server? Players get a warning 60 and 10 seconds before, and the world is saved and checked first.', restart: 'Restart the server? Players get a warning and the world is saved and checked first.' }[action];
   if (confirmText) {
     const r = await dialog.showMessageBox({ type: 'question', buttons: ['Cancel', action === 'shutdown' ? 'Shut down' : 'Restart'], defaultId: 0, cancelId: 0, title: 'Server Manager', message: confirmText });
     if (r.response !== 1) return;
   }
-  const r = ark ? await ark.run(action, { confirmed: !!confirmText }).catch(e => ({ ok: false, error: e.message })) : { ok: false, error: 'Not ready yet' };
+  const r = srv ? await srv.run(action, { confirmed: !!confirmText }).catch(e => ({ ok: false, error: e.message })) : { ok: false, error: 'Not ready yet' };
   if (!r.ok && tray) tray.displayBalloon({ title: 'Not started', content: r.error || '', iconType: 'warning' });
 }
-function updateTray(s) {
-  if (!tray) return;
-  lastSnap = s;
-  const name = (s && s.name) || 'Server Manager';
-  tray.setImage(trayImage(trayKind(s)));
-  tray.setToolTip(`${name} · ${trayLine(s)}`.slice(0, 127));
-  const can = k => !!(ark && ark.allowed(k));
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `${name}: ${trayLine(s)}`, enabled: false },
+// The icon shows the most important state of all servers: busy, then online, then offline.
+const RANK = { busy: 4, online: 3, off: 2, unset: 1 };
+function serverMenu(srv) {
+  const s = srv.snapshot(), can = k => !!srv.allowed(k), id = srv.id;
+  return [
+    { label: 'Start', enabled: can('start'), click: () => trayAction(id, 'start') },
+    { label: 'Save world', enabled: can('save'), click: () => trayAction(id, 'save') },
+    { label: 'Create backup', enabled: can('backup'), click: () => trayAction(id, 'backup') },
+    { label: 'Restart…', enabled: can('restart'), click: () => trayAction(id, 'restart') },
+    { label: 'Shut down…', enabled: can('shutdown'), click: () => trayAction(id, 'shutdown') },
     { type: 'separator' },
+    { label: 'Copy join command', enabled: !!s.connect, click: () => clipboard.writeText(s.connect) },
+  ];
+}
+const nameOf = (srv, s) => (s && s.name) || `${ADAPTERS[srv.type].label.split(':')[0]} server`;
+function updateTray() {
+  if (!tray) return;
+  const list = [...servers.values()];
+  const snaps = list.map(x => x.snapshot());
+  const kinds = snaps.map(trayKind);
+  const top = kinds.reduce((a, k) => (RANK[k] > RANK[a] ? k : a), 'unset');
+  tray.setImage(trayImage(top));
+  tray.setToolTip(list.map((x, i) => `${nameOf(x, snaps[i])} · ${trayLine(snaps[i])}`).join('\n').slice(0, 127) || 'Server Manager');
+  const per = list.length === 1
+    ? [{ label: `${nameOf(list[0], snaps[0])}: ${trayLine(snaps[0])}`, enabled: false }, { type: 'separator' }, ...serverMenu(list[0])]
+    : list.map((x, i) => ({ label: `${nameOf(x, snaps[i])}: ${trayLine(snaps[i])}`, submenu: serverMenu(x) }));
+  tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Server Manager', click: showFromTray },
     { type: 'separator' },
-    { label: 'Start', enabled: can('start'), click: () => trayAction('start') },
-    { label: 'Save world', enabled: can('save'), click: () => trayAction('save') },
-    { label: 'Create backup', enabled: can('backup'), click: () => trayAction('backup') },
-    { label: 'Restart…', enabled: can('restart'), click: () => trayAction('restart') },
-    { label: 'Shut down…', enabled: can('shutdown'), click: () => trayAction('shutdown') },
+    ...per,
     { type: 'separator' },
-    { label: 'Copy join command', enabled: !!(s && s.connect), click: () => clipboard.writeText(s.connect) },
     { label: 'Start with Windows', type: 'checkbox', checked: !!settings.launchAtLogin, click: m => setLaunchAtLogin(m.checked) },
     { label: 'Quit', click: () => { quitting = true; app.quit(); } },
   ]));
@@ -117,13 +145,13 @@ function setLaunchAtLogin(on) {
   settings.launchAtLogin = !!on; saveSettings();
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, args: ['--hidden'] });
   send('prefs', { tray: settings.tray, launchAtLogin: settings.launchAtLogin });
-  updateTray(lastSnap);
+  updateTray();
 }
 function createTray() {
   if (tray || !settings.tray) return;
   tray = new Tray(trayImage('unset'));
   tray.on('click', showFromTray);
-  updateTray(ark ? ark.snapshot() : null);
+  updateTray();
 }
 ipcMain.handle('prefs', () => ({ tray: settings.tray, launchAtLogin: settings.launchAtLogin }));
 ipcMain.handle('set-prefs', (_e, p) => {
@@ -135,8 +163,9 @@ ipcMain.handle('set-prefs', (_e, p) => {
   return { tray: settings.tray, launchAtLogin: settings.launchAtLogin };
 });
 
-// ---------------------------------------------------------------- the NAS
-let ark = null;
+// ---------------------------------------------------------------- the servers
+const servers = new Map();   // id -> adapter instance
+
 // ---------------------------------------------------------------- updates (GitHub releases)
 // A new version downloads quietly and installs when you close the app, or straight away
 // with "Restart to update" in Settings. Settings and the NAS key stay where they are.
@@ -160,51 +189,86 @@ ipcMain.handle('update-state', () => ({ ...update, current: app.getVersion(), pa
 ipcMain.handle('update-check', () => { if (autoUpdater && app.isPackaged) autoUpdater.checkForUpdates().catch(() => {}); return true; });
 ipcMain.handle('update-install', () => { if (autoUpdater && update.state === 'ready') autoUpdater.quitAndInstall(true, true); return true; });
 
-ipcMain.handle('init', () => ({ settings: { host: settings.host, user: settings.user }, state: ark ? ark.snapshot() : null, version: app.getVersion() }));
+function makeServer(cfg) {
+  const srv = ADAPTERS[cfg.type].make({
+    id: cfg.id,
+    dir: app.getPath('userData'),
+    getSettings: () => { const c = settings.servers.find(x => x.id === cfg.id) || {}; return { host: c.host, user: c.user }; },
+    send: snap => { send('state', { id: cfg.id, state: snap }); updateTray(); },
+    peek: p => send('toast', p),
+    log: m => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'server-manager.log'), `${new Date().toISOString()} [${cfg.id}] ${m}\n`); } catch { /* fine */ } },
+  });
+  servers.set(cfg.id, srv);
+  return srv;
+}
+const listForUi = () => settings.servers.map(x => ({ id: x.id, type: x.type, typeLabel: ADAPTERS[x.type].label, host: x.host, user: x.user }));
+const S = id => servers.get(id || settings.active);
+const fail = { ok: false, error: 'Not ready yet' };
+
+ipcMain.handle('init', () => ({
+  servers: listForUi(), active: settings.active, version: app.getVersion(),
+  states: Object.fromEntries([...servers].map(([id, x]) => [id, x.snapshot()])),
+  types: Object.entries(ADAPTERS).map(([type, a]) => ({ type, label: a.label })),
+}));
+ipcMain.handle('set-active', (_e, id) => { if (servers.has(id)) { settings.active = id; saveSettings(); } return settings.active; });
+ipcMain.handle('add-server', (_e, type) => {
+  if (!ADAPTERS[type]) return { ok: false, error: 'Unknown game' };
+  let n = 1; while (settings.servers.some(x => x.id === `${type}-${n}`)) n++;
+  const first = settings.servers[0] || {};
+  const cfg = { id: `${type}-${n}`, type, host: first.host || '', user: '' };   // same NAS by default; the user is per server
+  settings.servers.push(cfg); settings.active = cfg.id; saveSettings();
+  makeServer(cfg).start();
+  return { ok: true, id: cfg.id, servers: listForUi() };
+});
+ipcMain.handle('remove-server', (_e, id) => {
+  if (settings.servers.length < 2 || !servers.has(id)) return { ok: false, error: 'The last server stays' };
+  servers.get(id).stop();
+  servers.delete(id);
+  settings.servers = settings.servers.filter(x => x.id !== id);
+  if (settings.active === id) settings.active = settings.servers[0].id;
+  saveSettings(); updateTray();
+  return { ok: true, servers: listForUi(), active: settings.active };
+});
 ipcMain.handle('set-host', (_e, d) => {
-  const h = String((d && d.host) ?? settings.host).trim(), u = String((d && d.user) ?? settings.user).trim();
+  const cfg = settings.servers.find(x => x.id === (d && d.id) || x.id === settings.active && !(d && d.id));
+  if (!cfg) return { ok: false, error: 'No such server' };
+  const h = String((d && d.host) ?? cfg.host).trim(), u = String((d && d.user) ?? cfg.user).trim();
   if (h && !/^[a-zA-Z0-9.-]{1,253}$/.test(h)) return { ok: false, error: 'Not a valid address' };
   if (u && !/^[a-zA-Z0-9._-]{1,64}$/.test(u)) return { ok: false, error: 'Not a valid user name' };
-  settings.host = h; settings.user = u; saveSettings(); if (ark) ark.restart();
-  return { ok: true };
+  cfg.host = h; cfg.user = u; saveSettings(); S(cfg.id).restart();
+  return { ok: true, servers: listForUi() };
 });
 ipcMain.handle('run', async (_e, d) => {
-  if (!ark || !d || typeof d.action !== 'string') return { ok: false, error: 'Not ready yet' };
-  return ark.run(d.action, { confirmed: d.confirmed === true }).catch(e => ({ ok: false, error: e.message }));
+  const srv = S(d && d.id);
+  if (!srv || typeof d.action !== 'string') return fail;
+  return srv.run(d.action, { confirmed: d.confirmed === true }).catch(e => ({ ok: false, error: e.message }));
 });
-ipcMain.handle('backups', () => ark ? ark.listBackups() : { ok: false, backups: [] });
-ipcMain.handle('restore', (_e, d) => ark && d ? ark.restore(String(d.file || ''), { confirmed: d.confirmed === true }).catch(e => ({ ok: false, error: e.message })) : { ok: false, error: 'Not ready yet' });
-ipcMain.handle('config', (_e, word) => ark ? ark.setConfig(String(word || '')) : { ok: false, error: 'Not ready yet' });
-ipcMain.handle('key', async () => {
-  if (!ark) return { ok: false, error: 'Not ready yet' };
-  const r = await ark.createKey().catch(e => ({ ok: false, error: e.message }));
+ipcMain.handle('backups', (_e, id) => S(id) ? S(id).listBackups() : { ok: false, backups: [] });
+ipcMain.handle('restore', (_e, d) => S(d && d.id) && d ? S(d.id).restore(String(d.file || ''), { confirmed: d.confirmed === true }).catch(e => ({ ok: false, error: e.message })) : fail);
+ipcMain.handle('config', (_e, d) => S(d && d.id) ? S(d.id).setConfig(String((d && d.word) || '')) : fail);
+ipcMain.handle('key', async (_e, id) => {
+  if (!S(id)) return fail;
+  const r = await S(id).createKey().catch(e => ({ ok: false, error: e.message }));
   if (r.ok && r.command) clipboard.writeText(r.command);   // ready to paste in the NAS's SSH window
   return r;
 });
-ipcMain.handle('scan', () => ark ? ark.scanHost().catch(e => ({ ok: false, error: e.message })) : { ok: false });
-ipcMain.handle('trust', () => ark ? ark.trust() : { ok: false });
-ipcMain.handle('forget', () => ark ? ark.forget() : { ok: false });
-ipcMain.handle('log', () => ark ? ark.fetchLog() : '');
-ipcMain.handle('refresh', () => { if (ark) { ark.histAt = 0; ark.schedule(50); } return true; });
-ipcMain.handle('copy', (_e, what) => {
-  const s = ark && ark.snapshot();
-  const t = what === 'command' ? s && s.setup.command : s && s.connect;
+ipcMain.handle('scan', (_e, id) => S(id) ? S(id).scanHost().catch(e => ({ ok: false, error: e.message })) : fail);
+ipcMain.handle('trust', (_e, id) => S(id) ? S(id).trust() : fail);
+ipcMain.handle('forget', (_e, id) => S(id) ? S(id).forget() : fail);
+ipcMain.handle('log', (_e, id) => S(id) ? S(id).fetchLog() : '');
+ipcMain.handle('copy', (_e, d) => {
+  const s = S(d && d.id) && S(d.id).snapshot();
+  const t = d && d.what === 'command' ? s && s.setup.command : s && s.connect;
   if (!t) return false;
   clipboard.writeText(String(t)); return true;
 });
 
 app.whenReady().then(() => {
   loadSettings();
-  ark = new Ark({
-    dir: app.getPath('userData'),
-    getSettings: () => ({ host: settings.host, user: settings.user }),
-    send: s => { send('state', s); updateTray(s); },
-    peek: p => send('toast', p),
-    log: m => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'server-manager.log'), `${new Date().toISOString()} ${m}\n`); } catch { /* fine */ } },
-  });
+  for (const cfg of settings.servers) makeServer(cfg);
   createWindow();
   createTray();
-  ark.start();
+  for (const srv of servers.values()) srv.start();
   setupUpdater();
 });
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });

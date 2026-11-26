@@ -6,7 +6,10 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let A = null;              // state from the main process
-let SET = { host: '' };
+// Servers: the list from Settings, the one on screen, and the latest state of each.
+let SERVERS = [], ACTIVE = '', STATES = {}, TYPES = [];
+let SET = { host: '', user: '' };      // the on-screen server's address and user
+const cur = () => SERVERS.find(x => x.id === ACTIVE) || {};
 const range = 6;           // graph hours
 
 const LABEL = { restoring: 'Restoring a save', offline: 'Offline', starting: 'Starting', updating: 'Updating', online: 'Online', saving: 'Saving', backup: 'Creating backup', stopping: 'Shutting down', restarting: 'Restarting', error: 'Error', unavailable: 'Unavailable' };
@@ -83,7 +86,7 @@ async function refreshOpLog(op, since) {
   const key = `${op}|${since}`;
   if (opLog.key === key && Date.now() - opLog.at < 5000) return;
   opLog = { key, at: Date.now(), lines: opLog.key === key ? opLog.lines : [] };
-  const text = await api.invoke('log').catch(() => '');
+  const text = await api.invoke('log', ACTIVE).catch(() => '');
   const out = [];
   for (const line of String(text || '').split('\n')) {
     const m = line.match(/^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) \[([a-z-]+)\] (.*)$/);
@@ -203,7 +206,8 @@ const pretty = m => String(m || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(
 function render() {
   const st = status();
   const name = A && A.name ? (/server/i.test(A.name) ? A.name : `${A.name} Server`) : 'ARK server';
-  $('#name').textContent = name; $('#name2').textContent = name;
+  $('#name').firstChild.textContent = name; $('#name2').textContent = name;
+  $('#eyebrow').textContent = cur().typeLabel || 'Game server';
   $('#map').textContent = A && A.map ? `${pretty(A.map)} · Private LAN` : 'Private LAN';
   const busy = BUSY.has(st) || !!(A && (A.pending || A.operation));
   const dot = $('#dot');
@@ -288,7 +292,7 @@ function render() {
 // ------------------------------------------------------------------ previous saves and restore
 let prevOpen = false, prevAll = false, prevList = [], prevSeq = null;
 async function loadPrev() {
-  const r = await api.invoke('backups').catch(() => ({ ok: false, backups: [] }));
+  const r = await api.invoke('backups', ACTIVE).catch(() => ({ ok: false, backups: [] }));
   prevList = r.backups || [];
   if (!r.ok) $('#prevList').innerHTML = '<li class="muted">Could not read the backups from the NAS</li>';
   else renderPrev();
@@ -325,9 +329,67 @@ async function askRestore(b) {
   const yes = await new Promise(res => { $('#sheetYes').onclick = () => res(true); $('#sheetNo').onclick = () => res(false); });
   $('#sheet').classList.add('hidden');
   if (!yes) return;
-  const r = await api.invoke('restore', { file: b.file, confirmed: true }).catch(e => ({ ok: false, error: e.message }));
+  const r = await api.invoke('restore', { id: ACTIVE, file: b.file, confirmed: true }).catch(e => ({ ok: false, error: e.message }));
   if (!r.ok) toast({ title: 'Not restored', sub: r.error });
 }
+
+// ------------------------------------------------------------------ server switcher
+const DOT = s => !s || s.conn === 'unset' || s.conn === 'connecting' ? '' : s.conn !== 'ok' ? 'bad' : (s.operation || s.pending || BUSY.has(s.status)) ? 'busy' : s.status === 'online' ? 'on' : 'bad';
+const lineOf = s => !s || s.conn === 'unset' ? 'Not set up' : s.conn === 'connecting' ? 'Connecting' : s.conn !== 'ok' ? 'Offline' : `${LABEL[s.status] || s.status}${s.status === 'online' && s.players != null ? ` · ${s.players}/${s.maxPlayers}` : ''}`;
+function serverName(x) { const s = STATES[x.id]; return s && s.name ? s.name : `${(x.typeLabel || 'Game').split(':')[0]} server`; }
+function renderServers() {
+  $('#serverList').innerHTML = SERVERS.map(x => `
+    <li><button class="srow ${x.id === ACTIVE ? 'on' : ''}" data-server="${esc(x.id)}">
+      <i class="dot ${DOT(STATES[x.id])}"></i>
+      <span class="sname"><b>${esc(serverName(x))}</b><span class="pm">${esc(x.typeLabel)}</span></span>
+      <span class="sline">${esc(lineOf(STATES[x.id]))}</span>
+    </button></li>`).join('');
+  $('#addTypes').innerHTML = TYPES.map(t => `<button class="pill" data-add="${esc(t.type)}">+ ${esc(t.label)}</button>`).join('') + '<span class="muted small">More games can be added later</span>';
+}
+function resetServerView() {
+  track = { key: '', idx: -1, last: '', times: [], first: -1 };
+  opLog = { key: '', at: 0, lines: [] };
+  prevOpen = false; prevAll = false; prevList = []; prevSeq = null; connOpen = false; fpShown = false;
+  $('#prevCard').classList.add('hidden'); $('#trust').hidden = true;
+}
+async function switchServer(id) {
+  if (id === ACTIVE) { closeServers(); return; }
+  ACTIVE = await api.invoke('set-active', id);
+  SET = { host: cur().host || '', user: cur().user || '' };
+  A = STATES[ACTIVE] || null;
+  resetServerView(); closeServers(); render();
+  if (!$('#settings').classList.contains('hidden')) { renderSettings(); loadLog(); }
+}
+function openServers() { renderServers(); $('#servers').classList.remove('hidden'); }
+function closeServers() { $('#servers').classList.add('hidden'); }
+$('#name').onclick = openServers;
+$('#serversClose').onclick = closeServers;
+$('#servers').addEventListener('click', async e => {
+  if (e.target === $('#servers')) return closeServers();
+  const row = e.target.closest('[data-server]'); if (row) return switchServer(row.dataset.server);
+  const add = e.target.closest('[data-add]');
+  if (add) {
+    const r = await api.invoke('add-server', add.dataset.add);
+    if (!r.ok) return toast({ title: 'Not added', sub: r.error });
+    SERVERS = r.servers; ACTIVE = r.id; SET = { host: cur().host || '', user: '' }; A = STATES[ACTIVE] || null;
+    resetServerView(); closeServers(); show('settings');
+  }
+});
+$('#removeServer').onclick = () => {
+  $('#sheetTitle').textContent = `Remove ${serverName(cur())} from this app?`;
+  $('#sheetText').textContent = 'Only this app forgets the server: its address and settings here. Nothing changes on the NAS, and the game server keeps running.';
+  $('#sheetYes').textContent = 'Remove';
+  $('#sheet').classList.remove('hidden');
+  $('#sheetNo').onclick = () => $('#sheet').classList.add('hidden');
+  $('#sheetYes').onclick = async () => {
+    $('#sheet').classList.add('hidden');
+    const r = await api.invoke('remove-server', ACTIVE);
+    if (!r.ok) return toast({ title: 'Not removed', sub: r.error });
+    SERVERS = r.servers; delete STATES[ACTIVE]; ACTIVE = r.active;
+    SET = { host: cur().host || '', user: cur().user || '' }; A = STATES[ACTIVE] || null;
+    resetServerView(); show('home');
+  };
+};
 
 // ------------------------------------------------------------------ actions
 function ask(action) {
@@ -344,7 +406,7 @@ async function act(action) {
   if (!allowed(action)) return;
   const needs = !!CONFIRM[action];
   if (needs && !(await ask(action))) return;
-  const r = await api.invoke('run', { action, confirmed: needs }).catch(e => ({ ok: false, error: e.message }));
+  const r = await api.invoke('run', { id: ACTIVE, action, confirmed: needs }).catch(e => ({ ok: false, error: e.message }));
   if (!r.ok) toast({ title: 'Not started', sub: r.error });
 }
 document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => act(b.dataset.act)));
@@ -400,6 +462,7 @@ function renderSettings() {
   const age = au.lastTick ? (Date.now() - au.lastTick) / 60000 : null;
   // only say something when the automations on the NAS are not running
   // an hourly task is fine; only warn when the NAS task has stopped altogether
+  $('#removeRow').classList.toggle('hidden', SERVERS.length < 2);
   $('#tick').textContent = age != null && age > 150 ? `NAS task not run since ${clock(au.lastTick)}` : '';
   $('#build').textContent = A.updateAvailable ? `Update available · build ${A.build}` : `Build ${A.build || '–'}`;
   $('#updAction').textContent = A.updateAvailable ? 'Install' : 'Check';
@@ -413,7 +476,7 @@ function renderSettings() {
 }
 async function loadLog() {
   if (!connected()) { $('#log').textContent = '–'; return; }
-  const t = await api.invoke('log').catch(() => '');
+  const t = await api.invoke('log', ACTIVE).catch(() => '');
   $('#log').textContent = t || '–';
   $('#log').scrollTop = $('#log').scrollHeight;
 }
@@ -422,8 +485,8 @@ $('#connToggle').onclick = () => { connOpen = !connOpen; renderSettings(); };
 const commitHost = async () => {
   const host = $('#host').value.trim(), user = $('#user').value.trim();
   if (host === SET.host && user === SET.user) return;
-  const r = await api.invoke('set-host', { host, user });
-  if (r.ok) { SET.host = host; SET.user = user; } else toast({ title: 'Not saved', sub: r.error });
+  const r = await api.invoke('set-host', { id: ACTIVE, host, user });
+  if (r.ok) { SET.host = host; SET.user = user; SERVERS = r.servers || SERVERS; } else toast({ title: 'Not saved', sub: r.error });
 };
 for (const id of ['#host', '#user']) {
   $(id).addEventListener('change', commitHost);
@@ -431,25 +494,25 @@ for (const id of ['#host', '#user']) {
 }
 $('#key').onclick = async () => {
   $('#key').disabled = true;
-  const r = await api.invoke('key').catch(e => ({ ok: false, error: e.message }));
+  const r = await api.invoke('key', ACTIVE).catch(e => ({ ok: false, error: e.message }));
   $('#key').disabled = false;
   $('#keyState').textContent = r.ok ? 'NAS command copied: paste it in your SSH window on the NAS' : r.error;
 };
 $('#scan').onclick = async () => {
   $('#scan').disabled = true; fpShown = true; $('#fp').textContent = 'Asking the NAS…';
-  const r = await api.invoke('scan').catch(e => ({ ok: false, error: e.message }));
+  const r = await api.invoke('scan', ACTIVE).catch(e => ({ ok: false, error: e.message }));
   $('#scan').disabled = false;
   $('#fp').textContent = r.ok ? r.fingerprint : r.error;
   $('#trust').hidden = !r.ok;
 };
-$('#trust').onclick = async () => { await api.invoke('trust'); $('#trust').hidden = true; fpShown = false; renderSettings(); };
+$('#trust').onclick = async () => { await api.invoke('trust', ACTIVE); $('#trust').hidden = true; fpShown = false; renderSettings(); };
 $('#forget').onclick = async () => {
   $('#sheetTitle').textContent = 'Disconnect?'; $('#sheetText').textContent = 'This removes this PC\'s key and the trusted NAS key. You will have to set up the connection again.'; $('#sheetYes').textContent = 'Disconnect';
   $('#sheet').classList.remove('hidden');
   $('#sheetNo').onclick = () => $('#sheet').classList.add('hidden');
-  $('#sheetYes').onclick = async () => { $('#sheet').classList.add('hidden'); await api.invoke('forget'); };
+  $('#sheetYes').onclick = async () => { $('#sheet').classList.add('hidden'); await api.invoke('forget', ACTIVE); };
 };
-const cfg = async word => { const r = await api.invoke('config', word).catch(e => ({ ok: false, error: e.message })); if (!r.ok) toast({ title: 'Setting not saved', sub: r.error }); };
+const cfg = async word => { const r = await api.invoke('config', { id: ACTIVE, word }).catch(e => ({ ok: false, error: e.message })); if (!r.ok) toast({ title: 'Setting not saved', sub: r.error }); };
 document.querySelectorAll('#idle button').forEach(b => b.onclick = async () => {
   if (b.dataset.v === 'off') return cfg('autoshutdown-off');
   await cfg('idle-' + b.dataset.v);
@@ -465,9 +528,9 @@ const commitStart = () => {
 };
 $('#startAt').addEventListener('change', commitStart);
 $('#startAt').addEventListener('keydown', e => { if (e.key === 'Enter') { commitStart(); e.target.blur(); } });
-$('#updAction').onclick = () => A && A.updateAvailable ? act('update') : api.invoke('run', { action: 'checkupdate' }).then(r => { if (!r.ok) toast({ title: 'Not started', sub: r.error }); });
-$('#verify').onclick = () => api.invoke('run', { action: 'verify' }).then(r => { if (!r.ok) toast({ title: 'Not started', sub: r.error }); });
-$('#copyJoin').onclick = async () => { if (await api.invoke('copy', 'join')) toast({ title: 'Copied', sub: 'Paste it in the ARK console (Tab)' }); };
+$('#updAction').onclick = () => A && A.updateAvailable ? act('update') : api.invoke('run', { id: ACTIVE, action: 'checkupdate' }).then(r => { if (!r.ok) toast({ title: 'Not started', sub: r.error }); });
+$('#verify').onclick = () => api.invoke('run', { id: ACTIVE, action: 'verify' }).then(r => { if (!r.ok) toast({ title: 'Not started', sub: r.error }); });
+$('#copyJoin').onclick = async () => { if (await api.invoke('copy', { id: ACTIVE, what: 'join' })) toast({ title: 'Copied', sub: 'Paste it in the ARK console (Tab)' }); };
 
 // ------------------------------------------------------------------ app updates
 let UP = null;
@@ -493,11 +556,16 @@ $('#prefTray').onchange = async e => renderPrefs(await api.invoke('set-prefs', {
 $('#prefLogin').onchange = async e => renderPrefs(await api.invoke('set-prefs', { launchAtLogin: e.target.checked }));
 
 // ------------------------------------------------------------------ boot
-api.on('state', s => { A = s; render(); });
+api.on('state', d => {
+  STATES[d.id] = d.state;
+  if (d.id === ACTIVE) { A = d.state; render(); }
+  if (!$('#servers').classList.contains('hidden')) renderServers();
+});
 api.on('toast', toast);
 (async () => {
   const init = await api.invoke('init');
-  SET = init.settings; A = init.state;
+  SERVERS = init.servers; ACTIVE = init.active; STATES = init.states || {}; TYPES = init.types || [];
+  SET = { host: cur().host || '', user: cur().user || '' }; A = STATES[ACTIVE] || null;
   $('#version').textContent = `Server Manager ${init.version}`;
   renderUpdate(await api.invoke('update-state').catch(() => null));
   renderPrefs(await api.invoke('prefs').catch(() => null));

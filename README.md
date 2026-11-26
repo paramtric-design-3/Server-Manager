@@ -11,3 +11,7 @@ Run from source: `npm install`, then `npm start`. Build: `npm run dist` (on Wind
 Installed copies update themselves from this repo's releases: they check at start and every hour, download a new version quietly and install it when you close the app (or straight away with **Restart to update** in Settings). Settings and the NAS key stay where they are.
 
 To publish a new version: raise `"version"` in `package.json`, commit and push to `main`. The **Release** GitHub Action builds the installer on Windows and publishes it as release `vX.Y.Z`.
+
+## Servers and adapters
+
+The app keeps a list of servers (Settings is per server; the PC's key, the tray and the Windows settings are shared). Each game type is an adapter in `adapters/` with the same methods: `start`, `stop`, `snapshot`, `run`, `allowed`, `listBackups`, `restore`, `setConfig`, `fetchLog`, `createKey`, `scanHost`, `trust`, `forget`. `adapters/ark.js` talks to `ark-ctl` on the NAS. To add a game, write its adapter and register it in `ADAPTERS` in `main.js`.

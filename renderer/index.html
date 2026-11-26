@@ -14,8 +14,8 @@
     <main id="home" class="view">
       <header class="head">
         <div>
-          <div class="eyebrow">ARK: Survival Evolved</div>
-          <h1 id="name">ARK server</h1>
+          <div class="eyebrow" id="eyebrow">ARK: Survival Evolved</div>
+          <h1><button class="namebtn" id="name" aria-label="Switch server">ARK server<span class="namechev"></span></button></h1>
           <div class="sub" id="map">Private LAN</div>
         </div>
         <button class="round" id="openSettings" title="Settings" aria-label="Settings"></button>
@@ -120,10 +120,20 @@
       </section>
 
       <section class="card form">
-        <div class="frow"><span class="muted">Remove this PC's key and the trusted NAS key</span><button class="pill" id="forget">Disconnect</button></div>
+        <div class="frow"><span class="muted">Forget this NAS's key (set it up again with Check NAS key)</span><button class="pill" id="forget">Disconnect</button></div>
+        <div class="frow" id="removeRow"><span class="muted">Remove this server from the app</span><button class="pill" id="removeServer">Remove</button></div>
         <div class="frow"><span class="muted" id="version">Server Manager</span><button class="pill" id="updBtn">Check for updates</button></div>
       </section>
     </main>
+  </div>
+
+  <!-- server switcher -->
+  <div class="sheet hidden" id="servers">
+    <div class="sheetcard">
+      <div class="ftitle">Servers <button class="link" id="serversClose">Close</button></div>
+      <ul class="serverlist" id="serverList"></ul>
+      <div class="addrow" id="addTypes"></div>
+    </div>
   </div>
 
   <!-- confirmation sheet -->

@@ -154,6 +154,21 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .power.on { background: var(--accent); opacity: 1; }
 .plabel { font-size: 12.5px; }
 
+/* server switcher */
+.namebtn { display: inline-flex; align-items: center; gap: 8px; font: inherit; letter-spacing: inherit; border-radius: 10px; -webkit-app-region: no-drag; position: relative; z-index: 6; }
+.namechev { width: 8px; height: 8px; border-right: 2px solid var(--text-2); border-bottom: 2px solid var(--text-2); transform: rotate(45deg) translate(-2px, -2px); transition: border-color .15s; }
+.namebtn:hover .namechev { border-color: var(--text); }
+.namebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.serverlist { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.srow { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 18px; background: #FFFFFF; border: 1px solid var(--line); text-align: left; transition: border-color .15s, transform .12s var(--ease); }
+.srow:hover { border-color: rgba(21, 21, 21, .16); }
+.srow:active { transform: scale(.99); }
+.srow.on { border-color: var(--accent); }
+.srow .sname { flex: 1; min-width: 0; font-size: 14px; }
+.srow .sname .pm { display: block; font-size: 12px; color: var(--text-2); }
+.srow .sline { font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+.addrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+
 /* settings */
 .form { display: flex; flex-direction: column; gap: 12px; }
 .ftitle { font-size: 15px; font-weight: 600; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }

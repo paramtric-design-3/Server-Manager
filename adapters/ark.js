@@ -1,4 +1,6 @@
-// Server Manager — an ARK server on a NAS, straight over SSH.
+// Server Manager — adapter for an ARK: Survival Evolved server on a NAS, straight over SSH.
+// One instance per server. It talks to ark-ctl on the NAS; other games get their own adapter
+// with the same methods (snapshot, run, restore, listBackups, setConfig, fetchLog, ...).
 // Server Manager runs one program on the NAS: ark-ctl, through its own SSH key that the NAS restricts to
 // that script (and to this PC's IP address). ark-ctl does the real work: the lock, the safe
 // shutdown, the save and backup checks. The automations (shutdown when empty, morning backup
@@ -26,11 +28,14 @@ const time = s => { if (!s) return null; const t = Date.parse(s); return Number.
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 class Ark {
-  constructor({ dir, send, peek, log, getSettings, runImpl }) {
+  constructor({ id = 'ark-1', dir, send, peek, log, getSettings, runImpl }) {
+    this.id = id;
+    this.type = 'ark';
     this.dir = path.join(dir, 'ark-ssh');
     this.key = path.join(this.dir, 'id_ed25519');
     this.known = path.join(this.dir, 'known_hosts');
-    this.histFile = path.join(dir, 'ark-history.json');
+    // the first server keeps the history file it had before servers became a list
+    this.histFile = path.join(dir, id === 'ark-1' ? 'ark-history.json' : `history-${id}.json`);
     this.histAt = 0;                       // when the NAS history was last fetched
     this.logText = '';
     this.send = send;
@@ -54,7 +59,10 @@ class Ark {
     return { host: String(s.host || '').trim(), user: String(s.user || '').trim() };
   }
   hasKey() { return fs.existsSync(this.key) && fs.existsSync(this.key + '.pub'); }
-  trusted() { try { return fs.readFileSync(this.known, 'utf8').trim().length > 0; } catch { return false; } }
+  // known_hosts is shared by all servers: one line (or more) per NAS address
+  knownLines() { try { return fs.readFileSync(this.known, 'utf8').split('\n').filter(Boolean); } catch { return []; } }
+  hostOf(line) { return line.split(' ')[0].replace(/^\[|\](:\d+)?$/g, ''); }
+  trusted() { const { host } = this.cfg(); return !!host && this.knownLines().some(l => this.hostOf(l) === host); }
   ready() { const { host, user } = this.cfg(); return !!host && !!user && this.hasKey() && this.trusted(); }
   validHost(h) { return /^[a-zA-Z0-9.-]{1,253}$/.test(h); }
 
@@ -126,13 +134,17 @@ class Ark {
   trust() {
     if (!this.scan) return { ok: false, error: 'Check the NAS key first' };
     fs.mkdirSync(this.dir, { recursive: true });
-    fs.writeFileSync(this.known, this.scan + '\n');
+    const host = this.hostOf(this.scan);
+    const keep = this.knownLines().filter(l => this.hostOf(l) !== host);
+    fs.writeFileSync(this.known, [...keep, this.scan].join('\n') + '\n');
     this.scan = null;
     this.restart();
     return { ok: true };
   }
+  // Forget this NAS's key (other servers and this PC's own key stay)
   forget() {
-    for (const f of [this.key, this.key + '.pub', this.known]) fs.rmSync(f, { force: true });
+    const { host } = this.cfg();
+    try { fs.writeFileSync(this.known, this.knownLines().filter(l => this.hostOf(l) !== host).join('\n') + '\n'); } catch { /* fine */ }
     this.j = null;
     this.restart();
     return { ok: true };
@@ -141,7 +153,8 @@ class Ark {
   // ------------------------------------------------------------ polling
   start() { this.schedule(500); }
   restart() { clearTimeout(this.timer); this.conn = 'unset'; this.error = null; this.emit(); this.schedule(300); }
-  schedule(ms) { clearTimeout(this.timer); this.timer = setTimeout(() => this.poll(), ms); }
+  schedule(ms) { clearTimeout(this.timer); if (!this.stopped) this.timer = setTimeout(() => this.poll(), ms); }
+  stop() { this.stopped = true; clearTimeout(this.timer); clearTimeout(this.emitTimer); }
   async poll() {
     if (this.busy) return;
     if (!this.ready()) { this.conn = 'unset'; this.emit(); this.schedule(5000); return; }
@@ -231,6 +244,7 @@ class Ark {
     if (this.pending && Date.now() > this.pending.until) this.pending = null;
     const st = String(j.status || '');
     return {
+      id: this.id, type: this.type,
       conn: this.conn,
       error: this.error,
       setup: { host: this.cfg().host, user: this.cfg().user, hasKey: this.hasKey(), trusted: this.trusted(), command: this.hasKey() ? this.nasCommand() : '' },
