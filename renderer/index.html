@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+  <title>Server Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="drag"></div>
+  <div id="views">
+
+    <!-- ------------------------------------------------------------ main -->
+    <main id="home" class="view">
+      <header class="head">
+        <div>
+          <div class="eyebrow">ARK: Survival Evolved</div>
+          <h1 id="name">ARK server</h1>
+          <div class="sub" id="map">Private LAN</div>
+        </div>
+        <button class="round" id="openSettings" title="Settings" aria-label="Settings"></button>
+      </header>
+
+      <section class="card status">
+        <div class="cardtop">
+          <div>
+            <div class="label">Server status</div>
+            <div class="state"><i class="dot" id="dot"></i><span id="state">Connecting</span></div>
+          </div>
+          <button class="round small accent" id="range" title="Show 6 hours" aria-label="Change graph range"></button>
+        </div>
+        <div class="players"><span class="big" id="players">–</span><span class="of" id="playersOf">/ 5</span><span class="muted" id="playersLabel">Players online</span></div>
+        <div class="message" id="message"></div>
+        <div class="graph" id="graph"></div>
+        <div class="cardfoot"><span class="muted" id="graphLabel">Server activity · 24 h</span><span class="accenttext" id="activity"></span></div>
+      </section>
+
+      <div class="pair">
+        <section class="card metric">
+          <div class="micon" id="icoCpu"></div>
+          <div class="label">ARK CPU</div>
+          <div class="value"><span id="cpu">–</span></div>
+          <div class="bar"><i id="cpuBar"></i></div>
+          <div class="hint" id="cpuHint"></div>
+        </section>
+        <section class="card metric">
+          <div class="micon" id="icoMem"></div>
+          <div class="label">ARK memory</div>
+          <div class="value"><span id="mem">–</span><span class="unit" id="memOf"></span></div>
+          <div class="bar"><i id="memBar"></i></div>
+          <div class="hint" id="memHint"></div>
+        </section>
+      </div>
+
+      <section class="card saved" id="savedCard">
+        <div class="sicon" id="savedIcon"></div>
+        <div class="stext">
+          <div class="stitle" id="savedTitle">World saved</div>
+          <div class="muted" id="savedSub">–</div>
+        </div>
+        <div class="scheck" id="savedCheck"></div>
+      </section>
+
+      <nav class="dock">
+        <button class="dbtn" data-act="start"><span class="di"></span><span>Start</span></button>
+        <button class="dbtn" data-act="save"><span class="di"></span><span>Save</span></button>
+        <div class="powerwrap">
+          <button class="power" id="power" data-act="shutdown" aria-label="Shut down"></button>
+          <span class="plabel" id="powerLabel">Shut down</span>
+        </div>
+        <button class="dbtn" data-act="restart"><span class="di"></span><span>Restart</span></button>
+        <button class="dbtn" data-act="backup"><span class="di"></span><span>Backup</span></button>
+      </nav>
+    </main>
+
+    <!-- ------------------------------------------------------------ settings -->
+    <main id="settings" class="view hidden">
+      <header class="head">
+        <div class="backrow">
+          <button class="round" id="back" aria-label="Back"></button>
+          <div>
+            <div class="eyebrow" id="name2">ARK server</div>
+            <h1>Settings</h1>
+          </div>
+        </div>
+      </header>
+
+      <section class="card form">
+        <div class="ftitle">Connection</div>
+        <div class="muted" id="connLine">Not connected</div>
+        <label class="field"><span>NAS user</span><input id="user" spellcheck="false" placeholder="the SSH user for ark-ctl"></label>
+        <label class="field"><span>NAS address</span><input id="host" spellcheck="false" placeholder="e.g. 192.168.1.10"></label>
+        <div id="setup">
+          <p class="note"><b>1.</b> Create this PC's key. The NAS command is copied to your clipboard: paste it in your SSH window on the NAS.</p>
+          <div class="frow"><span id="keyState" class="muted">No key yet</span><button class="pill dark" id="key">Create key</button></div>
+          <p class="note"><b>2.</b> Check the NAS's own key. Trust it only when the fingerprint is exactly the one SSH showed you on the NAS.</p>
+          <div class="frow"><span id="fp" class="mono muted">Not checked</span><button class="pill" id="scan">Check NAS key</button><button class="pill dark" id="trust" hidden>Trust</button></div>
+        </div>
+      </section>
+
+      <section class="card form" id="autoCard">
+        <div class="ftitle">Automation <span class="muted small" id="tick"></span></div>
+        <div class="frow"><span>Shut down when nobody is online</span><label class="switch"><input type="checkbox" id="autoOn"><i></i></label></div>
+        <div class="frow"><span>After</span>
+          <div class="seg" id="idle">
+            <button data-v="15">15 m</button><button data-v="30">30 m</button><button data-v="60">1 h</button><button data-v="120">2 h</button>
+          </div>
+        </div>
+        <label class="field"><span>Start every day at</span><input id="startAt" placeholder="Off, or e.g. 19:30" spellcheck="false"></label>
+      </section>
+
+      <section class="card form" id="maintCard">
+        <div class="ftitle">Maintenance</div>
+        <div class="frow"><span id="build" class="muted">Game build –</span><button class="pill" id="checkUpd">Check</button><button class="pill dark" id="update">Install update</button></div>
+        <div class="frow"><span id="backupInfo" class="muted">No checked backup yet</span><button class="pill" id="verify">Check newest backup</button></div>
+        <div class="frow"><span class="muted" id="storage"></span></div>
+        <div class="frow"><span id="lastOp" class="muted"></span></div>
+      </section>
+
+      <section class="card form">
+        <div class="ftitle">Join</div>
+        <div class="frow"><span class="mono" id="join">–</span><button class="pill" id="copyJoin">Copy</button></div>
+      </section>
+
+      <section class="card form">
+        <div class="ftitle">NAS log <button class="link" id="refreshLog">Refresh</button></div>
+        <pre class="log" id="log">–</pre>
+      </section>
+
+      <section class="card form">
+        <div class="frow"><span class="muted">Remove this PC's key and the trusted NAS key</span><button class="pill" id="forget">Disconnect</button></div>
+        <div class="frow"><span class="muted" id="version">Server Manager</span><button class="pill" id="updBtn">Check for updates</button></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- confirmation sheet -->
+  <div class="sheet hidden" id="sheet">
+    <div class="sheetcard">
+      <div class="stitle" id="sheetTitle"></div>
+      <p class="muted" id="sheetText"></p>
+      <div class="sheetbtns"><button class="pill" id="sheetNo">Cancel</button><button class="pill dark" id="sheetYes">OK</button></div>
+    </div>
+  </div>
+  <div class="toast hidden" id="toast"><div class="ttitle" id="toastTitle"></div><div class="tsub" id="toastSub"></div></div>
+
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

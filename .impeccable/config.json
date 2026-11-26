@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist mono",
+        "createdAt": "2026-11-26T10:37:08.756Z",
+        "reason": "Project instructions require the project fonts (BDO Grotesk, Geist, Geist Mono); used only for the NAS log and fingerprint"
+      }
+    ]
+  }
+}
