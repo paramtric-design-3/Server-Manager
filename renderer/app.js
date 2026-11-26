@@ -196,7 +196,7 @@ function render() {
   else if (st === 'online' && A.auto && A.auto.shutdown && A.auto.idleSince && A.players === 0) {
     const left = Math.max(0, Math.ceil((A.auto.idleSince + A.auto.idleMinutes * 60000 - Date.now()) / 60000));
     msg.textContent = `Nobody online · shuts down in ${left} min`;
-  } else if (st === 'online' && A.started) msg.textContent = `Up ${since(A.started)} · ${A.connect}`;
+  } else if (st === 'online' && A.started) msg.textContent = `Up ${since(A.started)}`;
   else msg.textContent = '';
 
   $('.cardfoot').classList.toggle('hidden', !!prog);
