@@ -390,7 +390,8 @@ function renderSettings() {
   if (document.activeElement !== $('#startAt')) $('#startAt').value = au.startAt || '';
   const age = au.lastTick ? (Date.now() - au.lastTick) / 60000 : null;
   // only say something when the automations on the NAS are not running
-  $('#tick').textContent = age == null ? 'automations not running on the NAS' : age > 5 ? `automations paused since ${clock(au.lastTick)}` : '';
+  // an hourly task is fine; only warn when the NAS task has stopped altogether
+  $('#tick').textContent = age != null && age > 150 ? `NAS task not run since ${clock(au.lastTick)}` : '';
   $('#build').textContent = A.updateAvailable ? `Update available · build ${A.build}` : `Build ${A.build || '–'}`;
   $('#updAction').textContent = A.updateAvailable ? 'Install' : 'Check';
   $('#updAction').className = A.updateAvailable ? 'pill dark' : 'pill';
