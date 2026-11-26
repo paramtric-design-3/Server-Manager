@@ -350,23 +350,25 @@ function renderSettings() {
   $('#keyState').textContent = st.hasKey ? 'Key created' : 'No key yet';
   $('#key').textContent = st.hasKey ? 'Copy NAS command' : 'Create key';
   if (!fpShown) $('#fp').textContent = st.trusted ? 'NAS key trusted' : 'Not checked';
-  $('#autoCard').classList.toggle('hidden', !ok);
-  $('#maintCard').classList.toggle('hidden', !ok);
-  if (!ok) return;
+  // NAS rows only once connected; tray and Windows rows always
+  document.querySelectorAll('#prefsCard .prow').forEach((r, i) => r.classList.toggle('hidden', !ok && i < 4));
+  if (!ok) { $('#tick').textContent = ''; return; }
   const au = A.auto || {};
-  $('#autoOn').checked = !!au.shutdown;
-  document.querySelectorAll('#idle button').forEach(b => b.classList.toggle('on', +b.dataset.v === au.idleMinutes));
+  const sel = au.shutdown ? String(au.idleMinutes) : 'off';
+  document.querySelectorAll('#idle button').forEach(b => b.classList.toggle('on', b.dataset.v === sel));
   if (document.activeElement !== $('#startAt')) $('#startAt').value = au.startAt || '';
   const age = au.lastTick ? (Date.now() - au.lastTick) / 60000 : null;
-  $('#tick').textContent = age == null ? 'not running on the NAS yet' : age > 5 ? `paused since ${clock(au.lastTick)}` : 'active on the NAS';
-  $('#build').textContent = A.updateAvailable ? `Update available · build ${A.build}` : `Game build ${A.build || '–'}`;
-  $('#backupInfo').textContent = A.lastBackup ? `Last checked backup ${clock(A.lastBackup)}${A.backupMb != null ? ` · ${A.backupMb} MB` : ''}` : 'No checked backup yet';
-  $('#storage').textContent = A.backupTotalMb != null ? `Backups ${A.backupTotalMb} MB of ${A.backupLimitMb || '–'} MB · ${A.freeGb != null ? A.freeGb.toFixed(0) + ' GB free on the NAS' : ''}` : '';
-  $('#lastOp').textContent = A.lastOp ? `Last: ${A.lastOp} · ${A.lastResult || 'running'} · ${A.lastMessage}` : '';
+  // only say something when the automations on the NAS are not running
+  $('#tick').textContent = age == null ? 'automations not running on the NAS' : age > 5 ? `automations paused since ${clock(au.lastTick)}` : '';
+  $('#build').textContent = A.updateAvailable ? `Update available · build ${A.build}` : `Build ${A.build || '–'}`;
+  $('#updAction').textContent = A.updateAvailable ? 'Install' : 'Check';
+  $('#updAction').className = A.updateAvailable ? 'pill dark' : 'pill';
+  const gb = mb => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+  $('#backupInfo').textContent = [A.lastBackup ? `last checked ${clock(A.lastBackup)}` : 'none checked yet', A.backupTotalMb != null ? `${gb(A.backupTotalMb)} of ${gb(A.backupLimitMb || 0)}` : ''].filter(Boolean).join(' · ');
   $('#join').textContent = A.connect || '–';
   const busy = !!(A.operation || A.pending);
-  $('#checkUpd').disabled = busy; $('#verify').disabled = busy;
-  $('#update').disabled = busy || A.status !== 'online';
+  $('#verify').disabled = busy;
+  $('#updAction').disabled = busy || (A.updateAvailable && A.status !== 'online');
 }
 async function loadLog() {
   if (!connected()) { $('#log').textContent = '–'; return; }
@@ -407,8 +409,11 @@ $('#forget').onclick = async () => {
   $('#sheetYes').onclick = async () => { $('#sheet').classList.add('hidden'); await api.invoke('forget'); };
 };
 const cfg = async word => { const r = await api.invoke('config', word).catch(e => ({ ok: false, error: e.message })); if (!r.ok) toast({ title: 'Setting not saved', sub: r.error }); };
-$('#autoOn').onchange = e => cfg(e.target.checked ? 'autoshutdown-on' : 'autoshutdown-off');
-document.querySelectorAll('#idle button').forEach(b => b.onclick = () => cfg('idle-' + b.dataset.v));
+document.querySelectorAll('#idle button').forEach(b => b.onclick = async () => {
+  if (b.dataset.v === 'off') return cfg('autoshutdown-off');
+  await cfg('idle-' + b.dataset.v);
+  if (!(A && A.auto && A.auto.shutdown)) await cfg('autoshutdown-on');
+});
 const commitStart = () => {
   const v = $('#startAt').value.trim();
   if (v === ((A && A.auto && A.auto.startAt) || '')) return;
@@ -419,9 +424,8 @@ const commitStart = () => {
 };
 $('#startAt').addEventListener('change', commitStart);
 $('#startAt').addEventListener('keydown', e => { if (e.key === 'Enter') { commitStart(); e.target.blur(); } });
-$('#checkUpd').onclick = () => api.invoke('run', { action: 'checkupdate' }).then(r => { if (!r.ok) toast({ title: 'Not started', sub: r.error }); });
+$('#updAction').onclick = () => A && A.updateAvailable ? act('update') : api.invoke('run', { action: 'checkupdate' }).then(r => { if (!r.ok) toast({ title: 'Not started', sub: r.error }); });
 $('#verify').onclick = () => api.invoke('run', { action: 'verify' }).then(r => { if (!r.ok) toast({ title: 'Not started', sub: r.error }); });
-$('#update').onclick = () => act('update');
 $('#copyJoin').onclick = async () => { if (await api.invoke('copy', 'join')) toast({ title: 'Copied', sub: 'Paste it in the ARK console (Tab)' }); };
 
 // ------------------------------------------------------------------ app updates

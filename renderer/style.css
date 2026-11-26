@@ -164,7 +164,7 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .pill:disabled { opacity: .35; }
 .link { color: var(--accent); font-size: 12.5px; font-weight: 500; }
 .seg { display: flex; background: rgba(21, 21, 21, .05); border-radius: 14px; padding: 3px; }
-.seg button { height: 30px; padding: 0 11px; border-radius: 11px; font-size: 12.5px; color: var(--text-2); transition: background-color .15s, color .15s; }
+.seg button { height: 30px; padding: 0 9px; white-space: nowrap; border-radius: 11px; font-size: 12.5px; color: var(--text-2); transition: background-color .15s, color .15s; }
 .seg button.on { background: #FFFFFF; color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .08); }
 .switch { position: relative; width: 46px; height: 28px; flex: none; }
 .switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
@@ -172,6 +172,13 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: transform .22s var(--ease); }
 .switch input:checked + i { background: var(--accent); }
 .switch input:checked + i::after { transform: translateX(18px); }
+.prow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; border-top: 1px solid var(--line); font-size: 14px; }
+.ftitle + .prow { border-top: 0; }
+.prow > span:first-child { min-width: 0; }
+.prow .seg { flex: none; }
+.prow .pm { display: block; font-size: 12px; color: var(--text-2); margin-top: 1px; }
+.tinput { width: 92px; height: 34px; border-radius: 12px; border: 1px solid var(--line); background: #FFFFFF; padding: 0 12px; text-align: center; font-size: 13.5px; color: var(--text); outline: none; }
+.tinput:focus { border-color: var(--accent); }
 .log { margin: 0; font-family: var(--mono); font-size: 11px; line-height: 1.55; color: var(--text-2); white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow-y: auto; user-select: text; }
 
 /* sheet and toast */

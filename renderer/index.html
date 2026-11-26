@@ -107,29 +107,16 @@
         <pre class="log" id="log">–</pre>
       </section>
 
-      <section class="card form" id="autoCard">
-        <div class="ftitle">Automation <span class="muted small" id="tick"></span></div>
-        <div class="frow"><span>Shut down when nobody is online</span><label class="switch"><input type="checkbox" id="autoOn"><i></i></label></div>
-        <div class="frow"><span>After</span>
-          <div class="seg" id="idle">
-            <button data-v="15">15 m</button><button data-v="30">30 m</button><button data-v="60">1 h</button><button data-v="120">2 h</button>
-          </div>
+      <section class="card form" id="prefsCard">
+        <div class="ftitle">Options <span class="muted small" id="tick"></span></div>
+        <div class="prow"><span>Shut down when empty</span>
+          <div class="seg" id="idle"><button data-v="off">Off</button><button data-v="15">15m</button><button data-v="30">30m</button><button data-v="60">1h</button><button data-v="120">2h</button></div>
         </div>
-        <label class="field"><span>Start every day at</span><input id="startAt" placeholder="Off, or e.g. 19:30" spellcheck="false"></label>
-      </section>
-
-      <section class="card form" id="maintCard">
-        <div class="ftitle">Maintenance</div>
-        <div class="frow"><span id="build" class="muted">Game build –</span><button class="pill" id="checkUpd">Check</button><button class="pill dark" id="update">Install update</button></div>
-        <div class="frow"><span id="backupInfo" class="muted">No checked backup yet</span><button class="pill" id="verify">Check newest backup</button></div>
-        <div class="frow"><span class="muted" id="storage"></span></div>
-        <div class="frow"><span id="lastOp" class="muted"></span></div>
-      </section>
-
-      <section class="card form">
-        <div class="ftitle">This PC</div>
-        <div class="frow"><span>Keep running in the tray when closed</span><label class="switch"><input type="checkbox" id="prefTray"><i></i></label></div>
-        <div class="frow"><span>Start with Windows (in the tray)</span><label class="switch"><input type="checkbox" id="prefLogin"><i></i></label></div>
+        <div class="prow"><span>Start every day at</span><input class="tinput" id="startAt" placeholder="Off" spellcheck="false" aria-label="Daily start time"></div>
+        <div class="prow"><span>Game update <span class="pm" id="build"></span></span><button class="pill" id="updAction">Check</button></div>
+        <div class="prow"><span>Backups <span class="pm" id="backupInfo"></span></span><button class="pill" id="verify">Check</button></div>
+        <div class="prow"><span>Keep in the tray when closed</span><label class="switch"><input type="checkbox" id="prefTray"><i></i></label></div>
+        <div class="prow"><span>Start with Windows</span><label class="switch"><input type="checkbox" id="prefLogin"><i></i></label></div>
       </section>
 
       <section class="card form">
