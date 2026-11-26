@@ -95,6 +95,13 @@ async function refreshOpLog(op, since) {
   opLog.lines = out.slice(-6);
 }
 const clockSec = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const MESSAGE_STEP = [
+  [/queued|requested/i, ''], [/starting the container|starting again|starting;|starting with the restored/i, 'container'],
+  [/installing a game update/i, 'update'], [/loading the world/i, 'load'], [/warning players/i, 'warn'],
+  [/saving/i, 'save'], [/stopping the container/i, 'stop'], [/checking the backup|checking .*\.tar|backup on stop/i, 'verify'],
+  [/creating the backup/i, 'backup'], [/checking for a game update/i, 'check'], [/safety copy/i, 'safety'], [/putting .* back/i, 'restore'],
+];
+function stepFromMessage(m) { for (const [re, k] of MESSAGE_STEP) if (re.test(m || '')) return k; return ''; }
 let detailOpen = true;   // the active step's log box; done steps stay closed
 function renderSteps() {
   const op = currentOp(), box = $('#steps');
@@ -104,11 +111,13 @@ function renderSteps() {
   if (!on) { track = { key: '', idx: -1, last: '', times: [], first: -1 }; return null; }
   const key = `${op}|${A.opStarted || 'pending'}`;
   if (track.key !== key) { track = { key, idx: -1, last: '', times: [], first: -1 }; detailOpen = true; }
-  if (A.step && A.step !== track.last) {
-    let i = list.indexOf(A.step, track.idx < 0 ? 0 : track.idx);
-    if (i < 0) i = list.indexOf(A.step);
-    if (i >= 0) { track.idx = Math.max(track.idx, i); track.times[track.idx] = A.stepStarted || Date.now(); if (track.first < 0) track.first = track.idx; }
-    track.last = A.step;
+  // the step from the NAS; an older ark-ctl only sends a message, so read the step from that
+  const stepNow = A.step || stepFromMessage(A.message) || (A.operation ? list[Math.max(0, track.idx)] : '');
+  if (stepNow && stepNow !== track.last) {
+    let i = list.indexOf(stepNow, track.idx < 0 ? 0 : track.idx);
+    if (i < 0) i = list.indexOf(stepNow);
+    if (i >= 0 && i !== track.idx) { track.idx = Math.max(track.idx, i); track.times[track.idx] = (A.step && A.stepStarted) || Date.now(); if (track.first < 0) track.first = track.idx; }
+    track.last = stepNow;
   }
   if (A.operation) refreshOpLog(op, A.opStarted);
   const now = Date.now();
@@ -124,7 +133,7 @@ function renderSteps() {
       cls = 'now';
       const parts = [];
       if (k === 'warn' && A.stepUntil) { countdown = A.stepUntil - now; parts.push(`${mmss(countdown)} left · players have been warned`); }
-      else if (A.stepStarted) parts.push(`Started ${clockSec(A.stepStarted)} · ${mmss(now - A.stepStarted)} so far`);
+      else if (track.times[i]) parts.push(`Started ${clockSec(track.times[i])} · ${mmss(now - track.times[i])} so far`);
       if (k === 'update' && A.detail) parts.push(A.detail);
       if (k === 'stop') parts.push('backup on stop runs now');
       sub = parts.join(' · ');
