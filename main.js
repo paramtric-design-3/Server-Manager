@@ -1,7 +1,7 @@
 // Server Manager — main process: one window, the NAS connection (ark.js) and settings.
 'use strict';
 
-const { app, BrowserWindow, ipcMain, clipboard, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, clipboard, shell, nativeImage, Tray, Menu, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Ark } = require('./ark');
@@ -12,7 +12,7 @@ app.setAppUserModelId('com.fjbc.servermanager');
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // ---------------------------------------------------------------- settings
-const DEFAULTS = { host: '', user: '', bounds: null };   // filled in by you in Settings
+const DEFAULTS = { host: '', user: '', bounds: null, tray: true, launchAtLogin: false };   // host and user: filled in by you in Settings
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
@@ -40,13 +40,98 @@ function createWindow() {
   });
   win.setMenu(null);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.once('ready-to-show', () => win.show());
+  // started with Windows (launch at login): stay in the tray until you click the icon
+  const hidden = process.argv.includes('--hidden') && settings.tray;
+  win.once('ready-to-show', () => { if (!hidden) win.show(); });
+  // closing the window keeps Server Manager in the tray (Quit is in the tray menu)
+  win.on('close', e => { if (settings.tray && !quitting) { e.preventDefault(); win.hide(); } });
   const remember = () => { if (!win.isMinimized() && !win.isMaximized()) { settings.bounds = win.getBounds(); saveSettings(); } };
   win.on('resized', remember); win.on('moved', remember);
   // links open in the browser, never inside the app
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', e => e.preventDefault());
 }
+
+// ---------------------------------------------------------------- tray icon (bottom right)
+let tray = null, quitting = false, lastSnap = null;
+const trayImg = {};
+function trayImage(kind) {
+  if (!trayImg[kind]) trayImg[kind] = nativeImage.createFromPath(path.join(__dirname, 'build', `tray-${kind}.png`));
+  return trayImg[kind];
+}
+const WORDS = { offline: 'Offline', starting: 'Starting', updating: 'Updating', online: 'Online', saving: 'Saving', backup: 'Creating backup', stopping: 'Shutting down', restarting: 'Restarting', error: 'Error', unavailable: 'Unavailable' };
+function trayKind(s) {
+  if (!s || s.conn !== 'ok') return s && s.conn === 'error' ? 'error' : 'off';
+  if (s.pending || s.operation || ['starting', 'updating', 'saving', 'backup', 'stopping', 'restarting'].includes(s.status)) return 'busy';
+  return s.status === 'online' ? 'online' : s.status === 'error' ? 'error' : 'off';
+}
+function trayLine(s) {
+  if (!s || s.conn === 'unset') return 'Not connected';
+  if (s.conn !== 'ok') return 'Offline (the NAS does not answer)';
+  return `${WORDS[s.status] || s.status}${s.players != null ? ` · ${s.players}/${s.maxPlayers} players` : ''}`;
+}
+// Opened from the tray: just above the clock, like Windows' own flyouts.
+function showFromTray() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isVisible() && win.isFocused()) { win.hide(); return; }
+  const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const b = win.getBounds();
+  win.setBounds({ x: wa.x + wa.width - b.width - 12, y: wa.y + wa.height - b.height - 12, width: b.width, height: Math.min(b.height, wa.height - 24) });
+  win.show(); win.focus();
+}
+async function trayAction(action) {
+  const confirmText = { shutdown: 'Shut down the server? Players get a warning 60 and 10 seconds before, and the world is saved and checked first.', restart: 'Restart the server? Players get a warning and the world is saved and checked first.' }[action];
+  if (confirmText) {
+    const r = await dialog.showMessageBox({ type: 'question', buttons: ['Cancel', action === 'shutdown' ? 'Shut down' : 'Restart'], defaultId: 0, cancelId: 0, title: 'Server Manager', message: confirmText });
+    if (r.response !== 1) return;
+  }
+  const r = ark ? await ark.run(action, { confirmed: !!confirmText }).catch(e => ({ ok: false, error: e.message })) : { ok: false, error: 'Not ready yet' };
+  if (!r.ok && tray) tray.displayBalloon({ title: 'Not started', content: r.error || '', iconType: 'warning' });
+}
+function updateTray(s) {
+  if (!tray) return;
+  lastSnap = s;
+  const name = (s && s.name) || 'Server Manager';
+  tray.setImage(trayImage(trayKind(s)));
+  tray.setToolTip(`${name} · ${trayLine(s)}`.slice(0, 127));
+  const can = k => !!(ark && ark.allowed(k));
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: `${name}: ${trayLine(s)}`, enabled: false },
+    { type: 'separator' },
+    { label: 'Open Server Manager', click: showFromTray },
+    { type: 'separator' },
+    { label: 'Start', enabled: can('start'), click: () => trayAction('start') },
+    { label: 'Save world', enabled: can('save'), click: () => trayAction('save') },
+    { label: 'Create backup', enabled: can('backup'), click: () => trayAction('backup') },
+    { label: 'Restart…', enabled: can('restart'), click: () => trayAction('restart') },
+    { label: 'Shut down…', enabled: can('shutdown'), click: () => trayAction('shutdown') },
+    { type: 'separator' },
+    { label: 'Copy join command', enabled: !!(s && s.connect), click: () => clipboard.writeText(s.connect) },
+    { label: 'Start with Windows', type: 'checkbox', checked: !!settings.launchAtLogin, click: m => setLaunchAtLogin(m.checked) },
+    { label: 'Quit', click: () => { quitting = true; app.quit(); } },
+  ]));
+}
+function setLaunchAtLogin(on) {
+  settings.launchAtLogin = !!on; saveSettings();
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, args: ['--hidden'] });
+  send('prefs', { tray: settings.tray, launchAtLogin: settings.launchAtLogin });
+  updateTray(lastSnap);
+}
+function createTray() {
+  if (tray || !settings.tray) return;
+  tray = new Tray(trayImage('off'));
+  tray.on('click', showFromTray);
+  updateTray(ark ? ark.snapshot() : null);
+}
+ipcMain.handle('prefs', () => ({ tray: settings.tray, launchAtLogin: settings.launchAtLogin }));
+ipcMain.handle('set-prefs', (_e, p) => {
+  if (p && typeof p.tray === 'boolean') {
+    settings.tray = p.tray; saveSettings();
+    if (p.tray) createTray(); else if (tray) { tray.destroy(); tray = null; }
+  }
+  if (p && typeof p.launchAtLogin === 'boolean') setLaunchAtLogin(p.launchAtLogin);
+  return { tray: settings.tray, launchAtLogin: settings.launchAtLogin };
+});
 
 // ---------------------------------------------------------------- the NAS
 let ark = null;
@@ -109,13 +194,15 @@ app.whenReady().then(() => {
   ark = new Ark({
     dir: app.getPath('userData'),
     getSettings: () => ({ host: settings.host, user: settings.user }),
-    send: s => send('state', s),
+    send: s => { send('state', s); updateTray(s); },
     peek: p => send('toast', p),
     log: m => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'server-manager.log'), `${new Date().toISOString()} ${m}\n`); } catch { /* fine */ } },
   });
   createWindow();
+  createTray();
   ark.start();
   setupUpdater();
 });
-app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('window-all-closed', () => app.quit());
+app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });
+app.on('before-quit', () => { quitting = true; });
+app.on('window-all-closed', () => { if (!settings.tray) app.quit(); });

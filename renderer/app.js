@@ -311,6 +311,12 @@ function renderUpdate(u) {
 api.on('update', u => { renderUpdate(u); if (u.state === 'ready') toast({ title: `Update ${u.version} is ready`, sub: 'It installs when you close Server Manager, or now via Settings' }); });
 $('#updBtn').onclick = () => api.invoke(UP && UP.state === 'ready' ? 'update-install' : 'update-check');
 
+// ------------------------------------------------------------------ this PC: tray and start with Windows
+const renderPrefs = p => { if (!p) return; $('#prefTray').checked = !!p.tray; $('#prefLogin').checked = !!p.launchAtLogin; };
+api.on('prefs', renderPrefs);
+$('#prefTray').onchange = async e => renderPrefs(await api.invoke('set-prefs', { tray: e.target.checked }));
+$('#prefLogin').onchange = async e => renderPrefs(await api.invoke('set-prefs', { launchAtLogin: e.target.checked }));
+
 // ------------------------------------------------------------------ boot
 api.on('state', s => { A = s; render(); });
 api.on('toast', toast);
@@ -319,6 +325,7 @@ api.on('toast', toast);
   SET = init.settings; A = init.state;
   $('#version').textContent = `Server Manager ${init.version}`;
   renderUpdate(await api.invoke('update-state').catch(() => null));
+  renderPrefs(await api.invoke('prefs').catch(() => null));
   render();
 })();
 setInterval(render, 30000);   // countdowns and "today, 22:30" stay current
