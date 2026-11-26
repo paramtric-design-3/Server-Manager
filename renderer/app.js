@@ -340,13 +340,12 @@ function renderSettings() {
     : A.conn === 'connecting' ? 'Connecting…'
     : ok ? `Connected · ${A.name || 'the server'} is ${(LABEL[A.status] || A.status).toLowerCase()}` : (A.error || 'Not connected');
   $('#setup').classList.toggle('hidden', ok && st.hasKey && st.trusted);
-  // once it works, the connection folds away to one line at the bottom; until then it comes first
+  // once it works, the connection folds away to its status and the join command
   const done = ok && st.hasKey && st.trusted;
   $('#connBody').classList.toggle('hidden', done && !connOpen);
   $('#connToggle').hidden = !done;
   $('#connToggle').textContent = connOpen ? 'Done' : 'Change';
-  $('#connCard').style.order = done ? '' : '-1';
-  $('#joinCard').classList.toggle('hidden', !ok);
+  $('#joinRow').classList.toggle('hidden', !ok);
   $('#logCard').classList.toggle('hidden', !ok);
   $('#keyState').textContent = st.hasKey ? 'Key created' : 'No key yet';
   $('#key').textContent = st.hasKey ? 'Copy NAS command' : 'Create key';
