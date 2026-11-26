@@ -179,8 +179,12 @@ class Ark {
       if (r.code !== 0) this.log(`ark ssh ${r.code}: ${e.split('\n')[0]}`);
       this.emit();
     }
-    const fast = this.pending || (this.j && this.j.op) || (this.j && ['starting', 'updating', 'saving', 'backup', 'stopping', 'restarting'].includes(this.j.status));
-    this.schedule(this.conn === 'ok' ? (fast ? 4000 : 12000) : 30000);
+    // Quick updates during short actions (save, backup, shutdown). While the server starts or
+    // updates, every status costs the NAS a docker stats and an RCON try, so ask less often then.
+    const st = this.j && this.j.status;
+    const loading = ['starting', 'updating', 'restarting', 'restoring'].includes(st);
+    const fast = this.pending || (this.j && this.j.op) || ['saving', 'backup', 'stopping'].includes(st);
+    this.schedule(this.conn !== 'ok' ? 30000 : loading ? 15000 : fast ? 4000 : 12000);
   }
 
   update(j) {
