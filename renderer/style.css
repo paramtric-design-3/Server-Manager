@@ -65,7 +65,7 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .state { display: flex; align-items: center; gap: 9px; font-size: 22px; font-weight: 600; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-2); opacity: .6; flex: none; transition: background-color .3s; }
 .dot.on { background: var(--ok); opacity: 1; }
-.dot.busy { background: var(--accent); opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
+.dot.busy { background: var(--accent); opacity: 1; }
 .dot.bad { background: var(--danger); opacity: 1; }
 @keyframes pulse { 50% { opacity: .3; transform: scale(.8); } }
 .players { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
@@ -87,10 +87,11 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 /* one thin dashed line joining the dots */
 .steps li::before { content: ""; position: absolute; left: 10px; top: 14px; bottom: -2px; border-left: 1.5px dashed rgba(21, 21, 21, .18); }
 .steps li:last-child::before { display: none; }
-.tdot { width: 12px; height: 12px; border-radius: 50%; margin: 3px 0 0 5px; background: rgba(133, 133, 133, .35); position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--card); }
-.steps li.done .tdot { background: var(--accent); }
-.steps li.now .tdot { background: var(--danger); box-shadow: 0 0 0 3px var(--card), 0 0 0 7px rgba(194, 91, 78, .16); animation: pulse 1.4s ease-in-out infinite; }
-.steps li.skip .tdot { background: transparent; border: 1.5px solid rgba(133, 133, 133, .5); width: 9px; height: 9px; margin: 4px 0 0 6.5px; }
+.tdot { width: 10px; height: 10px; border-radius: 50%; margin: 4px 0 0 6px; background: rgba(133, 133, 133, .3); position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--card); }
+.steps li.done .tdot { background: rgba(21, 21, 21, .55); }
+/* the active step uses the status colour (orange while busy), without animation */
+.steps li.now .tdot { background: var(--accent); }
+.steps li.skip .tdot { background: transparent; border: 1.5px solid rgba(133, 133, 133, .45); width: 8px; height: 8px; margin: 5px 0 0 7px; }
 .tbody { min-width: 0; }
 .ttitle { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.35; }
 .steps li.todo .ttitle, .steps li.skip .ttitle { color: var(--text-2); }
@@ -98,7 +99,7 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .chev { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; color: var(--text-2); padding: 5px; transition: transform .2s var(--ease), background-color .15s; flex: none; }
 .chev:hover { background: rgba(21, 21, 21, .05); }
 .chev.open { transform: rotate(180deg); }
-.tlog { margin-top: 8px; background: rgba(21, 21, 21, .04); border-radius: 12px; padding: 9px 11px; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--text-2); animation: fade .2s; }
+.tlog { margin-top: 8px; background: rgba(21, 21, 21, .035); border-radius: 12px; padding: 8px 10px; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--text-2); animation: fade .2s; }
 .tlog div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tlog span { color: var(--text); margin-right: 8px; }
 .countdown { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }

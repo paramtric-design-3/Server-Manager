@@ -87,12 +87,13 @@ async function refreshOpLog(op, since) {
   if (opLog.key === key && Date.now() - opLog.at < 5000) return;
   opLog = { key, at: Date.now(), lines: opLog.key === key ? opLog.lines : [] };
   const text = await api.invoke('log', ACTIVE).catch(() => '');
-  const out = [];
+  let out = [];
   for (const line of String(text || '').split('\n')) {
     const m = line.match(/^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) \[([a-z-]+)\] (.*)$/);
     if (!m || m[3] !== op) continue;
     const t = Date.parse(`${m[1]}T${m[2]}`);
     if (since && Number.isFinite(t) && t < since - 5000) continue;
+    if (m[4] === 'requested') out = [];   // only the lines of this run, not of an earlier one
     out.push({ time: m[2], text: m[4] });
   }
   opLog.lines = out.slice(-6);
