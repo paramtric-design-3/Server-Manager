@@ -81,18 +81,26 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .graph .end { fill: var(--accent); }
 .graph .tick { stroke: rgba(21, 21, 21, .16); stroke-width: 1; }
 .graph .empty { fill: var(--text-2); font: 400 12px var(--font); }
-.steps { list-style: none; margin: 10px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 2px; min-height: 150px; }
-.steps li { display: flex; align-items: center; gap: 12px; min-height: 30px; font-size: 13.5px; color: var(--text-2); transition: color .2s; }
-.steps li .si { width: 18px; height: 18px; flex: none; display: grid; place-items: center; }
-.steps li .si i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid rgba(21, 21, 21, .25); }
-.steps li.done { color: var(--text); }
-.steps li.done .si { color: var(--ok); }
-.steps li.now { color: var(--text); font-weight: 600; }
-.steps li.now .si i { width: 10px; height: 10px; border: 0; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
-.steps li.skip { text-decoration: line-through; opacity: .6; }
-.steps li .st { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--text-2); }
-.steps li.now .st { color: var(--accent); }
-.steps li .sd { font-weight: 400; color: var(--text-2); font-size: 12px; margin-left: 6px; }
+.steps { list-style: none; margin: 12px 0 2px; padding: 0; display: flex; flex-direction: column; }
+.steps li { position: relative; display: grid; grid-template-columns: 22px 1fr; column-gap: 12px; padding-bottom: 16px; }
+.steps li:last-child { padding-bottom: 2px; }
+/* one thin dashed line joining the dots */
+.steps li::before { content: ""; position: absolute; left: 10px; top: 14px; bottom: -2px; border-left: 1.5px dashed rgba(21, 21, 21, .18); }
+.steps li:last-child::before { display: none; }
+.tdot { width: 12px; height: 12px; border-radius: 50%; margin: 3px 0 0 5px; background: rgba(133, 133, 133, .35); position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--card); }
+.steps li.done .tdot { background: var(--accent); }
+.steps li.now .tdot { background: var(--danger); box-shadow: 0 0 0 3px var(--card), 0 0 0 7px rgba(194, 91, 78, .16); animation: pulse 1.4s ease-in-out infinite; }
+.steps li.skip .tdot { background: transparent; border: 1.5px solid rgba(133, 133, 133, .5); width: 9px; height: 9px; margin: 4px 0 0 6.5px; }
+.tbody { min-width: 0; }
+.ttitle { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.35; }
+.steps li.todo .ttitle, .steps li.skip .ttitle { color: var(--text-2); }
+.tstat { font-size: 12px; color: var(--text-2); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.chev { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; color: var(--text-2); padding: 5px; transition: transform .2s var(--ease), background-color .15s; flex: none; }
+.chev:hover { background: rgba(21, 21, 21, .05); }
+.chev.open { transform: rotate(180deg); }
+.tlog { margin-top: 8px; background: rgba(21, 21, 21, .04); border-radius: 12px; padding: 9px 11px; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--text-2); animation: fade .2s; }
+.tlog div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tlog span { color: var(--text); margin-right: 8px; }
 .countdown { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 .cardfoot { display: flex; justify-content: space-between; font-size: 12.5px; margin-top: 2px; }
 

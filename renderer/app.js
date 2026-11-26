@@ -70,46 +70,74 @@ const OP_STEPS = {
 };
 const OPTIONAL = new Set(['warn', 'update', 'verify']);
 const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-let track = { key: '', idx: -1, last: '' };   // where the running operation is in its list
+let track = { key: '', idx: -1, last: '', times: [], first: -1 };   // where the running operation is in its list
 function currentOp() {
   if (!A) return null;
   if (A.operation) return A.operation;
   if (A.pending) return A.pending;
   return null;
 }
+// Log lines of the running operation, for the detail box under the active step.
+let opLog = { key: '', at: 0, lines: [] };
+async function refreshOpLog(op, since) {
+  const key = `${op}|${since}`;
+  if (opLog.key === key && Date.now() - opLog.at < 5000) return;
+  opLog = { key, at: Date.now(), lines: opLog.key === key ? opLog.lines : [] };
+  const text = await api.invoke('log').catch(() => '');
+  const out = [];
+  for (const line of String(text || '').split('\n')) {
+    const m = line.match(/^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) \[([a-z-]+)\] (.*)$/);
+    if (!m || m[3] !== op) continue;
+    const t = Date.parse(`${m[1]}T${m[2]}`);
+    if (since && Number.isFinite(t) && t < since - 5000) continue;
+    out.push({ time: m[2], text: m[4] });
+  }
+  opLog.lines = out.slice(-6);
+}
+const clockSec = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+let detailOpen = true;   // the active step's log box; done steps stay closed
 function renderSteps() {
   const op = currentOp(), box = $('#steps');
   const list = op && OP_STEPS[op];
   const on = !!list;
   box.classList.toggle('hidden', !on);
-  $('#graph').classList.toggle('hidden', on);
-  if (!on) { track = { key: '', idx: -1, last: '' }; return null; }
+  if (!on) { track = { key: '', idx: -1, last: '', times: [], first: -1 }; return null; }
   const key = `${op}|${A.opStarted || 'pending'}`;
-  if (track.key !== key) track = { key, idx: -1, last: '' };
+  if (track.key !== key) { track = { key, idx: -1, last: '', times: [], first: -1 }; detailOpen = true; }
   if (A.step && A.step !== track.last) {
     let i = list.indexOf(A.step, track.idx < 0 ? 0 : track.idx);
     if (i < 0) i = list.indexOf(A.step);
-    if (i >= 0) track.idx = Math.max(track.idx, i);
+    if (i >= 0) { track.idx = Math.max(track.idx, i); track.times[track.idx] = A.stepStarted || Date.now(); if (track.first < 0) track.first = track.idx; }
     track.last = A.step;
   }
+  if (A.operation) refreshOpLog(op, A.opStarted);
   const now = Date.now();
   let countdown = null;
   box.innerHTML = list.map((k, i) => {
-    let cls = 'todo', right = '', extra = '';
-    if (track.idx < 0 && i === 0 && !A.operation) { cls = 'now'; right = 'asking the NAS'; }
-    else if (i < track.idx) cls = OPTIONAL.has(k) && !seen(k, i) ? 'skip' : 'done';
-    else if (i === track.idx) {
+    let cls = 'todo', sub = '', detail = '';
+    if (track.idx < 0 && i === 0 && !A.operation) { cls = 'now'; sub = 'Asking the NAS…'; }
+    else if (i < track.idx) {
+      cls = i > track.first && OPTIONAL.has(k) && !seen(k, i) ? 'skip' : 'done';
+      const end = track.times.slice(i + 1).find(Boolean);
+      sub = cls === 'skip' ? 'Not needed' : end ? `Done at ${clockSec(end)}` : 'Done';
+    } else if (i === track.idx) {
       cls = 'now';
-      if (k === 'warn' && A.stepUntil) { countdown = A.stepUntil - now; right = mmss(countdown); }
-      else if (A.stepStarted) right = mmss(now - A.stepStarted);
-      if (k === 'update' && A.detail) extra = A.detail;
-      if (k === 'stop') extra = 'backup on stop runs now';
+      const parts = [];
+      if (k === 'warn' && A.stepUntil) { countdown = A.stepUntil - now; parts.push(`${mmss(countdown)} left · players have been warned`); }
+      else if (A.stepStarted) parts.push(`Started ${clockSec(A.stepStarted)} · ${mmss(now - A.stepStarted)} so far`);
+      if (k === 'update' && A.detail) parts.push(A.detail);
+      if (k === 'stop') parts.push('backup on stop runs now');
+      sub = parts.join(' · ');
+      if (opLog.key.startsWith(`${op}|`) && opLog.lines.length) {
+        detail = `<button class="chev ${detailOpen ? 'open' : ''}" data-chev aria-label="${detailOpen ? 'Hide details' : 'Show details'}" aria-expanded="${detailOpen}">${I.chevron}</button>`
+          + (detailOpen ? `<div class="tlog">${opLog.lines.map(l => `<div><span>${esc(l.time)}</span>${esc(l.text)}</div>`).join('')}</div>` : '');
+      }
     }
-    const icon = cls === 'done' ? I.checkmark : cls === 'skip' ? '–' : '<i></i>';
-    return `<li class="${cls}"><span class="si">${icon}</span><span>${esc(STEP_LABEL[k] || k)}${extra ? `<span class="sd">${esc(extra)}</span>` : ''}</span><span class="st">${right}</span></li>`;
+    return `<li class="${cls}"><span class="tdot"></span><div class="tbody"><div class="ttitle">${esc(STEP_LABEL[k] || k)}${detail && detail.startsWith('<button') ? detail.slice(0, detail.indexOf('</button>') + 9) : ''}</div>${sub ? `<div class="tstat">${esc(sub)}</div>` : ''}${detail ? detail.slice(detail.indexOf('</button>') + 9) : ''}</div></li>`;
   }).join('');
   return { op, countdown };
 }
+$('#steps').addEventListener('click', e => { if (e.target.closest('[data-chev]')) { detailOpen = !detailOpen; renderSteps(); } });
 // optional steps the NAS actually reported (so a skipped warning shows as skipped, not done)
 const seenSteps = new Map();
 function seen(k, i) { return (seenSteps.get(track.key) || new Set()).has(`${k}:${i}`); }
@@ -199,8 +227,11 @@ function render() {
   } else if (st === 'online' && A.started) msg.textContent = `Up ${since(A.started)}`;
   else msg.textContent = '';
 
-  $('.cardfoot').classList.toggle('hidden', !!prog);
-  if (!prog) graph();
+  // the player graph only while the server is online (not during an operation, not when offline)
+  const showGraph = !prog && connected() && st === 'online';
+  $('#graph').classList.toggle('hidden', !showGraph);
+  $('.cardfoot').classList.toggle('hidden', !showGraph);
+  if (showGraph) graph();
 
   // metrics: ARK's share of the NAS
   const cpu = A && A.cpu != null ? A.cpu / (A.cpus || 4) : null;
