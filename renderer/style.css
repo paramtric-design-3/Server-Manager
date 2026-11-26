@@ -99,7 +99,7 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .chev { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; color: var(--text-2); padding: 5px; transition: transform .2s var(--ease), background-color .15s; flex: none; }
 .chev:hover { background: rgba(21, 21, 21, .05); }
 .chev.open { transform: rotate(180deg); }
-.tlog { margin-top: 8px; background: rgba(21, 21, 21, .035); border-radius: 12px; padding: 8px 10px; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--text-2); animation: fade .2s; }
+.tlog { margin-top: 8px; background: rgba(21, 21, 21, .035); border-radius: 12px; padding: 8px 10px; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--text-2); }
 .tlog div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tlog span { color: var(--text); margin-right: 8px; }
 .countdown { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }

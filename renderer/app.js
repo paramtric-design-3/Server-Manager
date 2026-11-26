@@ -126,7 +126,7 @@ function renderSteps() {
   if (A.operation) refreshOpLog(op, A.opStarted);
   const now = Date.now();
   let countdown = null;
-  box.innerHTML = list.map((k, i) => {
+  const html = list.map((k, i) => {
     let cls = 'todo', sub = '', detail = '';
     if (track.idx < 0 && i === 0 && !A.operation) { cls = 'now'; sub = 'Asking the NAS…'; }
     else if (i < track.idx) {
@@ -148,6 +148,16 @@ function renderSteps() {
     }
     return `<li class="${cls}"><span class="tdot"></span><div class="tbody"><div class="ttitle">${esc(STEP_LABEL[k] || k)}${detail && detail.startsWith('<button') ? detail.slice(0, detail.indexOf('</button>') + 9) : ''}</div>${sub ? `<div class="tstat">${esc(sub)}</div>` : ''}${detail ? detail.slice(detail.indexOf('</button>') + 9) : ''}</div></li>`;
   }).join('');
+  // update in place: only the rows (and timers) that changed, so nothing flashes every second
+  const tmp = document.createElement('ol'); tmp.innerHTML = html;
+  const rows = [...tmp.children];
+  if (box.children.length !== rows.length) box.replaceChildren(...rows);
+  else rows.forEach((r, i) => { const old = box.children[i]; if (old.outerHTML !== r.outerHTML) {
+    if (old.className === r.className && old.querySelector('.ttitle')?.outerHTML === r.querySelector('.ttitle')?.outerHTML && old.querySelector('.tlog')?.outerHTML === r.querySelector('.tlog')?.outerHTML) {
+      const os = old.querySelector('.tstat'), ns = r.querySelector('.tstat');
+      if (os && ns) os.textContent = ns.textContent; else old.replaceWith(r);
+    } else old.replaceWith(r);
+  } });
   return { op, countdown };
 }
 $('#steps').addEventListener('click', e => { if (e.target.closest('[data-chev]')) { detailOpen = !detailOpen; renderSteps(); } });
