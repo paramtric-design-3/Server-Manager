@@ -7,10 +7,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 
 let A = null;              // state from the main process
 let SET = { host: '' };
-let range = 24;            // graph hours: 24 or 6
+const range = 6;           // graph hours
 
-const LABEL = { offline: 'Offline', starting: 'Starting', updating: 'Updating', online: 'Online', saving: 'Saving', backup: 'Creating backup', stopping: 'Shutting down', restarting: 'Restarting', error: 'Error', unavailable: 'Unavailable' };
-const BUSY = new Set(['starting', 'updating', 'saving', 'backup', 'stopping', 'restarting']);
+const LABEL = { restoring: 'Restoring a save', offline: 'Offline', starting: 'Starting', updating: 'Updating', online: 'Online', saving: 'Saving', backup: 'Creating backup', stopping: 'Shutting down', restarting: 'Restarting', error: 'Error', unavailable: 'Unavailable' };
+const BUSY = new Set(['starting', 'updating', 'saving', 'backup', 'stopping', 'restarting', 'restoring']);
 const CONFIRM = {
   shutdown: ['Shut down the server?', 'Players get a warning 60 and 10 seconds before. The world is saved and checked first; if the save cannot be verified, the server keeps running.', 'Shut down'],
   restart: ['Restart the server?', 'Players get a warning, the world is saved and checked, then the server stops and starts again. Players can reconnect after a few minutes.', 'Restart'],
@@ -20,7 +20,6 @@ const CONFIRM = {
 // static icons
 $('#openSettings').innerHTML = I.server;
 $('#back').innerHTML = I.back;
-$('#range').innerHTML = I.chart;
 $('#icoCpu').innerHTML = I.cpu;
 $('#icoMem').innerHTML = I.memory;
 $('#power').innerHTML = I.power;
@@ -51,13 +50,83 @@ function allowed(k) {
 }
 const powerAction = () => connected() && (A.status === 'offline' || A.status === 'error') ? 'start' : 'shutdown';
 
+// ------------------------------------------------------------------ live steps during an operation
+const STEP_LABEL = {
+  warn: 'Warn players', save: 'Save and check the world', stop: 'Stop the container', verify: 'Check the backup',
+  container: 'Start the container', safety: 'Safety copy of the current world', restore: 'Put the save back', update: 'Install game update', load: 'Load the world', backup: 'Create the backup', check: 'Check for a game update',
+};
+const OP_STEPS = {
+  start: ['container', 'update', 'load'],
+  shutdown: ['warn', 'save', 'stop', 'verify'],
+  'shutdown-idle': ['warn', 'save', 'stop', 'verify'],
+  'shutdown-unverified': ['stop', 'verify'],
+  restart: ['warn', 'save', 'stop', 'verify', 'container', 'update', 'load'],
+  save: ['save'],
+  backup: ['save', 'backup', 'verify'],
+  update: ['check', 'save', 'backup', 'verify', 'warn', 'save', 'stop', 'verify', 'container', 'update', 'load'],
+  checkupdate: ['check'],
+  restore: ['verify', 'safety', 'restore', 'container', 'update', 'load'],
+  verify: ['verify'],
+};
+const OPTIONAL = new Set(['warn', 'update', 'verify']);
+const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+let track = { key: '', idx: -1, last: '' };   // where the running operation is in its list
+function currentOp() {
+  if (!A) return null;
+  if (A.operation) return A.operation;
+  if (A.pending) return A.pending;
+  return null;
+}
+function renderSteps() {
+  const op = currentOp(), box = $('#steps');
+  const list = op && OP_STEPS[op];
+  const on = !!list;
+  box.classList.toggle('hidden', !on);
+  $('#graph').classList.toggle('hidden', on);
+  if (!on) { track = { key: '', idx: -1, last: '' }; return null; }
+  const key = `${op}|${A.opStarted || 'pending'}`;
+  if (track.key !== key) track = { key, idx: -1, last: '' };
+  if (A.step && A.step !== track.last) {
+    let i = list.indexOf(A.step, track.idx < 0 ? 0 : track.idx);
+    if (i < 0) i = list.indexOf(A.step);
+    if (i >= 0) track.idx = Math.max(track.idx, i);
+    track.last = A.step;
+  }
+  const now = Date.now();
+  let countdown = null;
+  box.innerHTML = list.map((k, i) => {
+    let cls = 'todo', right = '', extra = '';
+    if (track.idx < 0 && i === 0 && !A.operation) { cls = 'now'; right = 'asking the NAS'; }
+    else if (i < track.idx) cls = OPTIONAL.has(k) && !seen(k, i) ? 'skip' : 'done';
+    else if (i === track.idx) {
+      cls = 'now';
+      if (k === 'warn' && A.stepUntil) { countdown = A.stepUntil - now; right = mmss(countdown); }
+      else if (A.stepStarted) right = mmss(now - A.stepStarted);
+      if (k === 'update' && A.detail) extra = A.detail;
+      if (k === 'stop') extra = 'backup on stop runs now';
+    }
+    const icon = cls === 'done' ? I.checkmark : cls === 'skip' ? '–' : '<i></i>';
+    return `<li class="${cls}"><span class="si">${icon}</span><span>${esc(STEP_LABEL[k] || k)}${extra ? `<span class="sd">${esc(extra)}</span>` : ''}</span><span class="st">${right}</span></li>`;
+  }).join('');
+  return { op, countdown };
+}
+// optional steps the NAS actually reported (so a skipped warning shows as skipped, not done)
+const seenSteps = new Map();
+function seen(k, i) { return (seenSteps.get(track.key) || new Set()).has(`${k}:${i}`); }
+function noteStep() {
+  if (!track.key || track.idx < 0) return;
+  const set = seenSteps.get(track.key) || new Set();
+  set.add(`${OP_STEPS[currentOp()]?.[track.idx]}:${track.idx}`);
+  seenSteps.set(track.key, set);
+}
+
 // ------------------------------------------------------------------ graph
 function graph() {
   const box = $('#graph');
   const w = Math.max(200, box.clientWidth), h = box.clientHeight || 150;
   const top = 10, base = h - 22;
   const max = Math.max(1, (A && A.maxPlayers) || 5);
-  const now = Date.now(), from = now - range * 3600e3, N = range === 24 ? 24 : 18;
+  const now = Date.now(), from = now - range * 3600e3, N = 24;
   const hist = ((A && A.history) || []).filter(p => Number.isFinite(p.t)).sort((a, b) => a.t - b.t);
   const pts = [];
   let i = 0, last = null;
@@ -96,12 +165,14 @@ new ResizeObserver(() => graph()).observe($('#graph'));
 const pretty = m => String(m || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
 function render() {
   const st = status();
-  const name = (A && A.name) || 'ARK server';
+  const name = A && A.name ? (/server/i.test(A.name) ? A.name : `${A.name} Server`) : 'ARK server';
   $('#name').textContent = name; $('#name2').textContent = name;
   $('#map').textContent = A && A.map ? `${pretty(A.map)} · Private LAN` : 'Private LAN';
   const busy = BUSY.has(st) || !!(A && (A.pending || A.operation));
   const dot = $('#dot');
-  dot.className = 'dot' + (st === 'online' && !busy ? ' on' : busy ? ' busy' : st === 'error' ? ' bad' : '');
+  // green: online · orange: starting, shutting down or another action · red: offline or error · grey: not set up
+  const unset = !A || A.conn === 'unset' || A.conn === 'connecting';
+  dot.className = 'dot' + (unset ? '' : st === 'online' && !busy ? ' on' : busy ? ' busy' : ' bad');
   $('#state').textContent = !A || A.conn === 'connecting' ? 'Connecting'
     : A.conn === 'unset' ? 'Not connected'
     : A.conn !== 'ok' ? 'Offline'
@@ -109,13 +180,18 @@ function render() {
 
   const max = (A && A.maxPlayers) || 5;
   $('#players').textContent = A && A.players != null ? A.players : '–';
+  $('.players').classList.toggle('hidden', !(connected() && ['online', 'saving', 'backup'].includes(st)));
   $('#playersOf').textContent = `/ ${max}`;
 
+  const prog = renderSteps();
+  noteStep();
   const msg = $('#message');
   msg.classList.remove('bad');
   if (!A || A.conn === 'unset') msg.textContent = 'Set up the connection to the NAS in Settings.';
   else if (A.conn !== 'ok') { msg.textContent = A.error || 'The NAS does not answer'; msg.classList.add('bad'); }
   else if (st === 'error') { msg.textContent = A.message || 'See the NAS log in Settings'; msg.classList.add('bad'); }
+  else if (prog && prog.countdown != null) msg.innerHTML = `${prog.op === 'restart' ? 'Restarts' : 'Shuts down'} in <span class="countdown">${mmss(prog.countdown)}</span> · players have been warned`;
+  else if (prog && A.opStarted) msg.textContent = `${A.message || 'Working'} · ${mmss(Date.now() - A.opStarted)} so far`;
   else if (busy && A.message) msg.textContent = A.message;
   else if (st === 'online' && A.auto && A.auto.shutdown && A.auto.idleSince && A.players === 0) {
     const left = Math.max(0, Math.ceil((A.auto.idleSince + A.auto.idleMinutes * 60000 - Date.now()) / 60000));
@@ -123,9 +199,8 @@ function render() {
   } else if (st === 'online' && A.started) msg.textContent = `Up ${since(A.started)} · ${A.connect}`;
   else msg.textContent = '';
 
-  $('#activity').textContent = st === 'online' && !busy ? (A.players > 0 ? 'Active' : 'Quiet') : busy ? LABEL[st] : st === 'offline' ? 'Off' : '';
-  $('#graphLabel').textContent = `Server activity · ${range} h`;
-  graph();
+  $('.cardfoot').classList.toggle('hidden', !!prog);
+  if (!prog) graph();
 
   // metrics: ARK's share of the NAS
   const cpu = A && A.cpu != null ? A.cpu / (A.cpus || 4) : null;
@@ -164,6 +239,54 @@ function render() {
   p.setAttribute('aria-label', pa === 'start' ? 'Start server' : 'Shut down safely');
 
   if (!$('#settings').classList.contains('hidden')) renderSettings();
+  if (prevOpen) {
+    const seq = A ? `${A.lastOp}|${A.lastResult}|${A.lastMessage}` : null;   // reload the list after an operation finishes
+    if (seq !== prevSeq) { prevSeq = seq; loadPrev(); } else renderPrev();
+  }
+}
+
+// ------------------------------------------------------------------ previous saves and restore
+let prevOpen = false, prevAll = false, prevList = [], prevSeq = null;
+async function loadPrev() {
+  const r = await api.invoke('backups').catch(() => ({ ok: false, backups: [] }));
+  prevList = r.backups || [];
+  if (!r.ok) $('#prevList').innerHTML = '<li class="muted">Could not read the backups from the NAS</li>';
+  else renderPrev();
+}
+function renderPrev() {
+  const off = connected() && (A.status === 'offline' || A.status === 'error') && !A.operation && !A.pending;
+  $('#prevNote').textContent = off ? '' : 'restore only while the server is off';
+  const rows = prevAll ? prevList : prevList.slice(0, 5);
+  $('#prevMore').hidden = prevList.length <= 5;
+  $('#prevMore').textContent = prevAll ? 'Show fewer' : `Show all ${prevList.length}`;
+  $('#prevList').innerHTML = rows.length ? rows.map((b, i) => `
+    <li class="prevrow">
+      <span class="ok" title="${b.verified ? 'Checked with tar: world, profiles and tribes are in it' : 'Not checked yet'}">${b.verified ? I.check : I.clock}</span>
+      <span class="pt"><b>${esc(clock(Date.parse(b.time)))}</b> <span class="pm">· ${b.mb} MB${b.pre_restore ? ' · copy from before a restore' : ''}${b.verified ? '' : ' · not checked'}</span></span>
+      <button class="pill" data-restore="${i}" ${off ? '' : 'disabled'}>Restore</button>
+    </li>`).join('') : '<li class="muted">No backups on the NAS yet</li>';
+  $('#prevList').querySelectorAll('[data-restore]').forEach(btn => btn.onclick = () => askRestore(rows[+btn.dataset.restore]));
+}
+function togglePrev() {
+  prevOpen = !prevOpen;
+  $('#prevCard').classList.toggle('hidden', !prevOpen);
+  $('#savedCard').setAttribute('aria-expanded', String(prevOpen));
+  if (prevOpen) loadPrev();
+}
+$('#savedCard').onclick = togglePrev;
+$('#savedCard').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePrev(); } };
+$('#prevMore').onclick = () => { prevAll = !prevAll; renderPrev(); };
+async function askRestore(b) {
+  if (!b) return;
+  $('#sheetTitle').textContent = `Put back the save of ${clock(Date.parse(b.time))}?`;
+  $('#sheetText').textContent = 'The world, player profiles and tribes go back to that moment; everything after it is undone. The NAS first checks this backup, then keeps the current world as a safety copy, so you can go back. Afterwards the server starts to check that the world loads.';
+  $('#sheetYes').textContent = 'Restore';
+  $('#sheet').classList.remove('hidden');
+  const yes = await new Promise(res => { $('#sheetYes').onclick = () => res(true); $('#sheetNo').onclick = () => res(false); });
+  $('#sheet').classList.add('hidden');
+  if (!yes) return;
+  const r = await api.invoke('restore', { file: b.file, confirmed: true }).catch(e => ({ ok: false, error: e.message }));
+  if (!r.ok) toast({ title: 'Not restored', sub: r.error });
 }
 
 // ------------------------------------------------------------------ actions
@@ -185,7 +308,6 @@ async function act(action) {
   if (!r.ok) toast({ title: 'Not started', sub: r.error });
 }
 document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => act(b.dataset.act)));
-$('#range').onclick = () => { range = range === 24 ? 6 : 24; $('#range').title = `Show ${range === 24 ? 6 : 24} hours`; render(); };
 
 let toastTimer = null;
 function toast(p) {
@@ -328,4 +450,5 @@ api.on('toast', toast);
   renderPrefs(await api.invoke('prefs').catch(() => null));
   render();
 })();
-setInterval(render, 30000);   // countdowns and "today, 22:30" stay current
+setInterval(render, 30000);   // "today, 22:30" and the idle countdown stay current
+setInterval(() => { if (currentOp()) render(); }, 1000);   // live countdown and step timers

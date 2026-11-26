@@ -22,17 +22,12 @@
       </header>
 
       <section class="card status">
-        <div class="cardtop">
-          <div>
-            <div class="label">Server status</div>
-            <div class="state"><i class="dot" id="dot"></i><span id="state">Connecting</span></div>
-          </div>
-          <button class="round small accent" id="range" title="Show 6 hours" aria-label="Change graph range"></button>
-        </div>
+        <div class="state"><i class="dot" id="dot"></i><span id="state">Connecting</span></div>
         <div class="players"><span class="big" id="players">–</span><span class="of" id="playersOf">/ 5</span><span class="muted" id="playersLabel">Players online</span></div>
         <div class="message" id="message"></div>
+        <ol class="steps hidden" id="steps"></ol>
         <div class="graph" id="graph"></div>
-        <div class="cardfoot"><span class="muted" id="graphLabel">Server activity · 24 h</span><span class="accenttext" id="activity"></span></div>
+        <div class="cardfoot"><span class="muted" id="graphLabel">Players · last 6 hours</span></div>
       </section>
 
       <div class="pair">
@@ -52,13 +47,19 @@
         </section>
       </div>
 
-      <section class="card saved" id="savedCard">
+      <section class="card saved" id="savedCard" role="button" tabindex="0" aria-expanded="false" title="Show previous saves">
         <div class="sicon" id="savedIcon"></div>
         <div class="stext">
           <div class="stitle" id="savedTitle">World saved</div>
           <div class="muted" id="savedSub">–</div>
         </div>
         <div class="scheck" id="savedCheck"></div>
+      </section>
+
+      <section class="card prev hidden" id="prevCard">
+        <div class="ftitle">Previous saves <span class="muted small" id="prevNote"></span></div>
+        <ul class="prevlist" id="prevList"><li class="muted">Loading…</li></ul>
+        <button class="link" id="prevMore" hidden>Show more</button>
       </section>
 
       <nav class="dock">

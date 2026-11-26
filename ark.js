@@ -12,7 +12,7 @@ const { spawn } = require('child_process');
 
 const ACTIONS = new Set(['start', 'save', 'backup', 'shutdown', 'restart', 'update', 'checkupdate', 'verify']);
 const NEEDS_CONFIRM = new Set(['shutdown', 'restart', 'update']);
-const STATUSES = new Set(['offline', 'starting', 'updating', 'online', 'saving', 'backup', 'stopping', 'restarting', 'error']);
+const STATUSES = new Set(['offline', 'starting', 'updating', 'online', 'saving', 'backup', 'stopping', 'restarting', 'restoring', 'error']);
 const CONFIG_RE = /^(autoshutdown-on|autoshutdown-off|idle-(15|30|45|60|75|90|105|120|135|150|165|180|195|210|225|240)|start-off|start-([01][0-9]|2[0-3])[0-5][0-9])$/;
 const HISTORY_MS = 24 * 3600 * 1000;
 
@@ -237,6 +237,9 @@ class Ark {
       status: this.conn === 'ok' && STATUSES.has(st) ? st : 'unavailable',
       message: j.message || '',
       operation: j.op || '',
+      step: j.step || '', stepStarted: num(j.step_started) != null ? j.step_started * 1000 : null,
+      stepUntil: num(j.step_until) != null ? j.step_until * 1000 : null,
+      opStarted: num(j.op_started) != null ? j.op_started * 1000 : null, detail: j.detail || '',
       players: num(j.players),
       maxPlayers: num(j.max_players) || 5,
       cpu: num(j.cpu),
@@ -271,6 +274,26 @@ class Ark {
     if (action === 'start') return st === 'offline' || st === 'error';
     if (action === 'verify' || action === 'checkupdate') return true;
     return st === 'online';
+  }
+  // Previous saves: the backups on the NAS, newest first
+  async listBackups() {
+    if (this.conn !== 'ok') return { ok: false, backups: [] };
+    const r = await this.ssh('backups', 20000);
+    try { return { ok: true, backups: JSON.parse((r.out || '').trim().split('\n').pop()).backups || [] }; } catch { return { ok: false, backups: [] }; }
+  }
+  // Put a backup back: only with the server off and after confirmation; the NAS keeps the current world
+  async restore(file, { confirmed = false } = {}) {
+    if (!confirmed) return { ok: false, error: 'Needs confirmation' };
+    if (!/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(String(file)) || String(file).includes('..')) return { ok: false, error: 'Not a backup file' };
+    if (this.conn !== 'ok' || !this.j || this.pending || this.j.op) return { ok: false, error: this.j && this.j.op ? `${this.j.op} is still running` : 'Not connected to the NAS' };
+    if (!(this.j.status === 'offline' || this.j.status === 'error')) return { ok: false, error: 'Shut the server down first' };
+    this.pending = { action: 'restore', until: Date.now() + 30000 };
+    this.emit();
+    const r = await this.ssh(`restore ${file}`, 30000);
+    const out = (r.out || '').trim();
+    if (r.code === 0 && /^OK\b/.test(out)) { this.schedule(1500); return { ok: true }; }
+    this.pending = null; this.emit(); this.schedule(500);
+    return { ok: false, error: out.replace(/^(REFUSED|BUSY)\s*/, '') || (r.err || '').trim().split('\n')[0] || 'The NAS did not answer' };
   }
   async run(action, { confirmed = false } = {}) {
     if (!ACTIONS.has(action)) return { ok: false, error: 'Unknown action' };

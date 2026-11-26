@@ -14,6 +14,7 @@
   --line: rgba(21, 21, 21, .08);
   --track: rgba(21, 21, 21, .08);
   --danger: #C25B4E;
+  --ok: #4E9F6A;
   --radius: 28px;
   --shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 10px 30px rgba(0, 0, 0, .06), 0 2px 6px rgba(0, 0, 0, .04);
   --ease: cubic-bezier(.3, .8, .3, 1);
@@ -58,11 +59,11 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .card { background: var(--card); border: 1px solid rgba(255, 255, 255, .85); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 18px; }
 .label { font-size: 12.5px; color: var(--text-2); }
 
-.status { display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 16px; }
+.status { display: flex; flex-direction: column; gap: 6px; padding: 20px 18px 16px; }
 .cardtop { display: flex; align-items: flex-start; justify-content: space-between; }
-.state { display: flex; align-items: center; gap: 9px; font-size: 22px; font-weight: 600; margin-top: 3px; }
+.state { display: flex; align-items: center; gap: 9px; font-size: 22px; font-weight: 600; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-2); opacity: .6; flex: none; transition: background-color .3s; }
-.dot.on { background: var(--accent); opacity: 1; }
+.dot.on { background: var(--ok); opacity: 1; }
 .dot.busy { background: var(--accent); opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
 .dot.bad { background: var(--danger); opacity: 1; }
 @keyframes pulse { 50% { opacity: .3; transform: scale(.8); } }
@@ -79,6 +80,19 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .graph .end { fill: var(--accent); }
 .graph .tick { stroke: rgba(21, 21, 21, .16); stroke-width: 1; }
 .graph .empty { fill: var(--text-2); font: 400 12px var(--font); }
+.steps { list-style: none; margin: 10px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 2px; min-height: 150px; }
+.steps li { display: flex; align-items: center; gap: 12px; min-height: 30px; font-size: 13.5px; color: var(--text-2); transition: color .2s; }
+.steps li .si { width: 18px; height: 18px; flex: none; display: grid; place-items: center; }
+.steps li .si i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid rgba(21, 21, 21, .25); }
+.steps li.done { color: var(--text); }
+.steps li.done .si { color: var(--ok); }
+.steps li.now { color: var(--text); font-weight: 600; }
+.steps li.now .si i { width: 10px; height: 10px; border: 0; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.steps li.skip { text-decoration: line-through; opacity: .6; }
+.steps li .st { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--text-2); }
+.steps li.now .st { color: var(--accent); }
+.steps li .sd { font-weight: 400; color: var(--text-2); font-size: 12px; margin-left: 6px; }
+.countdown { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 .cardfoot { display: flex; justify-content: space-between; font-size: 12.5px; margin-top: 2px; }
 
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -90,7 +104,19 @@ h1 { margin: 2px 0 1px; font-size: 24px; font-weight: 600; letter-spacing: -.01e
 .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .6s var(--ease); }
 .hint { font-size: 11.5px; color: var(--text-2); margin-top: 4px; }
 
-.saved { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
+.saved { display: flex; align-items: center; gap: 14px; padding: 16px 18px; cursor: pointer; transition: transform .12s var(--ease); }
+.saved:active { transform: scale(.99); }
+.saved:focus-visible, .prevrow button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prev { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; animation: in .22s var(--ease); }
+.prevlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.prevrow { display: flex; align-items: center; gap: 10px; min-height: 40px; border-top: 1px solid var(--line); font-size: 13px; }
+.prevrow:first-child { border-top: 0; }
+.prevrow .pt { flex: 1; min-width: 0; }
+.prevrow .pt b { font-weight: 500; }
+.prevrow .pm { color: var(--text-2); font-size: 12px; }
+.prevrow .ok { color: var(--ok); width: 16px; height: 16px; flex: none; }
+.prevrow .pill { height: 30px; padding: 0 12px; font-size: 12px; }
+.prev .link { align-self: flex-start; }
 .sicon { width: 24px; height: 24px; color: var(--accent); flex: none; }
 .stext { flex: 1; min-width: 0; }
 .stitle { font-size: 15px; font-weight: 600; }

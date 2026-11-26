@@ -59,11 +59,13 @@ function trayImage(kind) {
   if (!trayImg[kind]) trayImg[kind] = nativeImage.createFromPath(path.join(__dirname, 'build', `tray-${kind}.png`));
   return trayImg[kind];
 }
-const WORDS = { offline: 'Offline', starting: 'Starting', updating: 'Updating', online: 'Online', saving: 'Saving', backup: 'Creating backup', stopping: 'Shutting down', restarting: 'Restarting', error: 'Error', unavailable: 'Unavailable' };
+const WORDS = { restoring: 'Restoring a save', offline: 'Offline', starting: 'Starting', updating: 'Updating', online: 'Online', saving: 'Saving', backup: 'Creating backup', stopping: 'Shutting down', restarting: 'Restarting', error: 'Error', unavailable: 'Unavailable' };
 function trayKind(s) {
-  if (!s || s.conn !== 'ok') return s && s.conn === 'error' ? 'error' : 'off';
-  if (s.pending || s.operation || ['starting', 'updating', 'saving', 'backup', 'stopping', 'restarting'].includes(s.status)) return 'busy';
-  return s.status === 'online' ? 'online' : s.status === 'error' ? 'error' : 'off';
+  // grey: not set up · red: offline or error · orange: busy · green: online
+  if (!s || s.conn === 'unset' || s.conn === 'connecting') return 'unset';
+  if (s.conn !== 'ok') return 'off';
+  if (s.pending || s.operation || ['starting', 'updating', 'saving', 'backup', 'stopping', 'restarting', 'restoring'].includes(s.status)) return 'busy';
+  return s.status === 'online' ? 'online' : 'off';
 }
 function trayLine(s) {
   if (!s || s.conn === 'unset') return 'Not connected';
@@ -119,7 +121,7 @@ function setLaunchAtLogin(on) {
 }
 function createTray() {
   if (tray || !settings.tray) return;
-  tray = new Tray(trayImage('off'));
+  tray = new Tray(trayImage('unset'));
   tray.on('click', showFromTray);
   updateTray(ark ? ark.snapshot() : null);
 }
@@ -170,6 +172,8 @@ ipcMain.handle('run', async (_e, d) => {
   if (!ark || !d || typeof d.action !== 'string') return { ok: false, error: 'Not ready yet' };
   return ark.run(d.action, { confirmed: d.confirmed === true }).catch(e => ({ ok: false, error: e.message }));
 });
+ipcMain.handle('backups', () => ark ? ark.listBackups() : { ok: false, backups: [] });
+ipcMain.handle('restore', (_e, d) => ark && d ? ark.restore(String(d.file || ''), { confirmed: d.confirmed === true }).catch(e => ({ ok: false, error: e.message })) : { ok: false, error: 'Not ready yet' });
 ipcMain.handle('config', (_e, word) => ark ? ark.setConfig(String(word || '')) : { ok: false, error: 'Not ready yet' });
 ipcMain.handle('key', async () => {
   if (!ark) return { ok: false, error: 'Not ready yet' };
