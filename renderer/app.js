@@ -17,7 +17,7 @@ const BUSY = new Set(['starting', 'updating', 'saving', 'backup', 'stopping', 'r
 const CONFIRM = {
   shutdown: ['Shut down the server?', 'Players get a warning 60 and 10 seconds before. The world is saved and checked first; if the save cannot be verified, the server keeps running.', 'Shut down'],
   restart: ['Restart the server?', 'Players get a warning, the world is saved and checked, then the server stops and starts again. Players can reconnect after a few minutes.', 'Restart'],
-  update: ['Install the game update?', 'Players are warned, the world is saved, a checked backup is made, then the server restarts and installs the update.', 'Install'],
+  update: ['Install the update?', 'Players get a warning, the world is saved, a checked backup is made, then the game and the mods are updated and the server loads again. This takes a few minutes.', 'Install'],
 };
 
 // static icons
@@ -56,7 +56,7 @@ const powerAction = () => connected() && (A.status === 'offline' || A.status ===
 // ------------------------------------------------------------------ live steps during an operation
 const STEP_LABEL = {
   warn: 'Warn players', save: 'Save and check the world', stop: 'Stop the container', verify: 'Check the backup',
-  container: 'Start the container', safety: 'Safety copy of the current world', restore: 'Put the save back', update: 'Install game update', load: 'Load the world', backup: 'Create the backup', check: 'Check for a game update',
+  container: 'Start the container', safety: 'Safety copy of the current world', restore: 'Put the save back', update: 'Install the update', load: 'Load the world', backup: 'Create the backup', check: 'Check for a game or mod update',
 };
 const OP_STEPS = {
   start: ['container', 'update', 'load'],
@@ -66,7 +66,7 @@ const OP_STEPS = {
   restart: ['warn', 'save', 'stop', 'verify', 'container', 'update', 'load'],
   save: ['save'],
   backup: ['save', 'backup', 'verify'],
-  update: ['check', 'save', 'backup', 'verify', 'warn', 'save', 'stop', 'verify', 'container', 'update', 'load'],
+  update: ['check', 'warn', 'save', 'backup', 'verify', 'update', 'load'],
   checkupdate: ['check'],
   restore: ['verify', 'safety', 'restore', 'container', 'update', 'load'],
   verify: ['verify'],
