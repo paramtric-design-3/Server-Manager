@@ -1,7 +1,7 @@
 {
   "name": "server-manager",
   "productName": "Server Manager",
-  "version": "1.5.6",
+  "version": "1.6.0",
   "description": "Control an ARK: Survival Evolved server on a NAS over SSH",
   "main": "main.js",
   "author": "FJBC",

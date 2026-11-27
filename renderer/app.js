@@ -106,28 +106,58 @@ const MESSAGE_STEP = [
   [/creating the backup/i, 'backup'], [/checking for a game update/i, 'check'], [/safety copy/i, 'safety'], [/putting .* back/i, 'restore'],
 ];
 function stepFromMessage(m) { for (const [re, k] of MESSAGE_STEP) if (re.test(m || '')) return k; return ''; }
-let detailOpen = true;   // the active step's log box; done steps stay closed
+let detailOpen = true;
+// How long each step took on earlier runs, per server (kept on this PC): the reference for the estimate.
+const DUR = {
+  key: () => `durations:${ACTIVE}`,
+  all() { try { return JSON.parse(localStorage.getItem(this.key()) || '{}'); } catch { return {}; } },
+  add(step, ms) {
+    if (!(ms > 2000 && ms < 3 * 3600e3)) return;
+    const d = this.all(); d[step] = [...(d[step] || []), Math.round(ms)].slice(-6);
+    try { localStorage.setItem(this.key(), JSON.stringify(d)); } catch { /* fine */ }
+  },
+  typical(step) {   // the median of the last runs, or null when this step was never measured
+    const v = (this.all()[step] || []).slice().sort((a, b) => a - b);
+    return v.length ? v[Math.floor(v.length / 2)] : null;
+  },
+};
+// record a step's duration only when the app saw it start (or the NAS told when it started)
+function recordStep(i, endAt) {
+  const list = OP_STEPS[track.op] || [];
+  const k = list[i], t0 = track.times[i];
+  if (!k || !t0 || (i === track.first && !track.exactFirst)) return;
+  DUR.add(k, endAt - t0);
+}
+const minutes = ms => { const m = Math.max(1, Math.round(ms / 60000)); return m === 1 ? 'about 1 min' : `about ${m} min`; };   // the active step's log box; done steps stay closed
 function renderSteps() {
   const op = currentOp(), box = $('#steps');
   const list = op && OP_STEPS[op];
   const on = !!list;
   box.classList.toggle('hidden', !on);
-  if (!on) { track = { key: '', idx: -1, last: '', times: [], first: -1 }; return null; }
+  if (!on) {
+    if (track.key && track.idx >= 0 && A && A.conn === 'ok' && A.lastResult === 'ok') recordStep(track.idx, Date.now());
+    track = { key: '', idx: -1, last: '', times: [], first: -1 }; return null;
+  }
   const key = `${op}|${A.opStarted || 'pending'}`;
-  if (track.key !== key) { track = { key, idx: -1, last: '', times: [], first: -1 }; detailOpen = true; }
+  if (track.key !== key) { track = { key, op, idx: -1, last: '', times: [], first: -1, exactFirst: false }; detailOpen = true; }
   // the step from the NAS; an older ark-ctl only sends a message, so read the step from that
   const stepNow = A.step || stepFromMessage(A.message) || (A.operation ? list[Math.max(0, track.idx)] : '');
   if (stepNow && stepNow !== track.last) {
     let i = list.indexOf(stepNow, track.idx < 0 ? 0 : track.idx);
     if (i < 0) i = list.indexOf(stepNow);
-    if (i >= 0 && i !== track.idx) { track.idx = Math.max(track.idx, i); track.times[track.idx] = (A.step && A.stepStarted) || Date.now(); if (track.first < 0) track.first = track.idx; }
+    if (i >= 0 && i > track.idx) {
+      const at = (A.step && A.stepStarted) || Date.now();
+      if (track.idx >= 0) recordStep(track.idx, at);
+      track.idx = i; track.times[i] = at;
+      if (track.first < 0) { track.first = i; track.exactFirst = !!(A.step && A.stepStarted); }
+    }
     track.last = stepNow;
   }
   if (A.operation) refreshOpLog(op, A.opStarted);
   const now = Date.now();
   let countdown = null;
   const html = list.map((k, i) => {
-    let cls = 'todo', sub = '', detail = '';
+    let cls = 'todo', sub = '', detail = '', bar = null;
     if (track.idx < 0 && i === 0 && !A.operation) { cls = 'now'; sub = 'Asking the NAS…'; }
     else if (i < track.idx) {
       cls = i > track.first && OPTIONAL.has(k) && !seen(k, i) ? 'skip' : 'done';
@@ -137,7 +167,12 @@ function renderSteps() {
       cls = 'now';
       const parts = [];
       if (k === 'warn' && A.stepUntil) { countdown = A.stepUntil - now; parts.push(`${mmss(countdown)} left · players have been warned`); }
-      else if (track.times[i]) parts.push(`Started ${clockSec(track.times[i])} · ${mmss(now - track.times[i])} so far`);
+      else if (track.times[i]) {
+        const so = now - track.times[i], typ = DUR.typical(k);
+        parts.push(`${mmss(so)} so far`);
+        if (typ) { parts.push(so > typ * 1.25 ? `usually ${minutes(typ).replace('about ', '')}, taking longer` : `usually ${minutes(typ)}`); bar = Math.min(96, so / typ * 100); }
+        else if (['load', 'update', 'container', 'stop'].includes(k)) parts.push('measuring for next time');
+      }
       if (k === 'update' && A.detail) parts.push(A.detail);
       if (k === 'stop') parts.push('backup on stop runs now');
       sub = parts.join(' · ');
@@ -146,7 +181,8 @@ function renderSteps() {
           + (detailOpen ? `<div class="tlog">${opLog.lines.map(l => `<div><span>${esc(l.time)}</span>${esc(l.text)}</div>`).join('')}</div>` : '');
       }
     }
-    return `<li class="${cls}"><span class="tdot"></span><div class="tbody"><div class="ttitle">${esc(STEP_LABEL[k] || k)}${detail && detail.startsWith('<button') ? detail.slice(0, detail.indexOf('</button>') + 9) : ''}</div>${sub ? `<div class="tstat">${esc(sub)}</div>` : ''}${detail ? detail.slice(detail.indexOf('</button>') + 9) : ''}</div></li>`;
+    const barHtml = bar != null ? `<div class="tbar"><i style="width:${bar.toFixed(1)}%"></i></div>` : '';
+    return `<li class="${cls}"><span class="tdot"></span><div class="tbody">${''}<div class="ttitle">${esc(STEP_LABEL[k] || k)}${detail && detail.startsWith('<button') ? detail.slice(0, detail.indexOf('</button>') + 9) : ''}</div>${sub ? `<div class="tstat">${esc(sub)}</div>` : ''}${barHtml}${detail ? detail.slice(detail.indexOf('</button>') + 9) : ''}</div></li>`;
   }).join('');
   // update in place: only the rows (and timers) that changed, so nothing flashes every second
   const tmp = document.createElement('ol'); tmp.innerHTML = html;
@@ -155,10 +191,23 @@ function renderSteps() {
   else rows.forEach((r, i) => { const old = box.children[i]; if (old.outerHTML !== r.outerHTML) {
     if (old.className === r.className && old.querySelector('.ttitle')?.outerHTML === r.querySelector('.ttitle')?.outerHTML && old.querySelector('.tlog')?.outerHTML === r.querySelector('.tlog')?.outerHTML) {
       const os = old.querySelector('.tstat'), ns = r.querySelector('.tstat');
-      if (os && ns) os.textContent = ns.textContent; else old.replaceWith(r);
+      const ob = old.querySelector('.tbar i'), nb = r.querySelector('.tbar i');
+      if (os && ns && !!ob === !!nb) { os.textContent = ns.textContent; if (ob) ob.style.width = nb.style.width; } else old.replaceWith(r);
     } else old.replaceWith(r);
   } });
-  return { op, countdown };
+  // ready in about … : the rest of the active step plus the typical time of the steps still to come
+  let left = null;
+  if (track.idx >= 0 && A.operation) {
+    let total = 0, known = true;
+    list.forEach((k, i) => {
+      if (i < track.idx) return;
+      const typ = DUR.typical(k);
+      if (i === track.idx) { if (typ) total += Math.max(0, typ - (now - (track.times[i] || now))); else if (!OPTIONAL.has(k)) known = false; }
+      else if (typ) total += typ; else if (!OPTIONAL.has(k)) known = false;
+    });
+    if (known) left = total;
+  }
+  return { op, countdown, left };
 }
 $('#steps').addEventListener('click', e => { if (e.target.closest('[data-chev]')) { detailOpen = !detailOpen; renderSteps(); } });
 // optional steps the NAS actually reported (so a skipped warning shows as skipped, not done)
@@ -243,6 +292,7 @@ function render() {
   else if (A.conn !== 'ok') { msg.textContent = A.error || 'The NAS does not answer'; msg.classList.add('bad'); }
   else if (st === 'error') { msg.textContent = A.message || 'See the NAS log in Settings'; msg.classList.add('bad'); }
   else if (prog && prog.countdown != null) msg.innerHTML = `${prog.op === 'restart' ? 'Restarts' : 'Shuts down'} in <span class="countdown">${mmss(prog.countdown)}</span> · players have been warned`;
+  else if (prog && prog.left != null) msg.textContent = prog.left > 30000 ? `${A.message || 'Working'} · ready in ${minutes(prog.left)}` : `${A.message || 'Working'} · almost ready`;
   else if (prog && A.opStarted) msg.textContent = `${A.message || 'Working'} · ${mmss(Date.now() - A.opStarted)} so far`;
   else if (busy && A.message) msg.textContent = A.message;
   else if (st === 'online' && A.auto && A.auto.shutdown && A.auto.idleSince && A.players === 0) {
