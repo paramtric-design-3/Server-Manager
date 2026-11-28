@@ -2,6 +2,7 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, clipboard, shell, nativeImage, Tray, Menu, screen, dialog } = require('electron');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 // One adapter per game type. Each server in the list gets its own instance.
@@ -118,6 +119,7 @@ function serverMenu(srv) {
     { label: 'Shut down…', enabled: can('shutdown'), click: () => trayAction(id, 'shutdown') },
     { type: 'separator' },
     { label: 'Copy join command', enabled: !!s.connect, click: () => clipboard.writeText(s.connect) },
+    { label: 'Open SSH on the NAS', click: () => { const r = openSsh(id); if (!r.ok) { showFromTray(); send('toast', { title: 'SSH not opened', sub: r.error }); } } },
   ];
 }
 const nameOf = (srv, s) => (s && s.name) || `${ADAPTERS[srv.type].label.split(':')[0]} server`;
@@ -201,7 +203,7 @@ function makeServer(cfg) {
   servers.set(cfg.id, srv);
   return srv;
 }
-const listForUi = () => settings.servers.map(x => ({ id: x.id, type: x.type, typeLabel: ADAPTERS[x.type].label, host: x.host, user: x.user }));
+const listForUi = () => settings.servers.map(x => ({ id: x.id, type: x.type, typeLabel: ADAPTERS[x.type].label, host: x.host, user: x.user, sshUser: x.sshUser || '' }));
 const S = id => servers.get(id || settings.active);
 const fail = { ok: false, error: 'Not ready yet' };
 
@@ -236,6 +238,36 @@ ipcMain.handle('set-host', (_e, d) => {
   if (h && !/^[a-zA-Z0-9.-]{1,253}$/.test(h)) return { ok: false, error: 'Not a valid address' };
   if (u && !/^[a-zA-Z0-9._-]{1,64}$/.test(u)) return { ok: false, error: 'Not a valid user name' };
   cfg.host = h; cfg.user = u; saveSettings(); S(cfg.id).restart();
+  return { ok: true, servers: listForUi() };
+});
+// Open a terminal on this PC, logged in to the NAS with your own admin account (asks for its
+// password in the terminal). The arkctl key can't do this: it may only run ark-ctl.
+function openSsh(id) {
+  const cfg = settings.servers.find(x => x.id === (id || settings.active));
+  if (!cfg || !cfg.host) return { ok: false, error: 'Enter the NAS address first' };
+  if (!cfg.sshUser) return { ok: false, error: 'Enter your NAS admin account first', needUser: true };
+  if (!/^[a-zA-Z0-9.-]{1,253}$/.test(cfg.host) || !/^[a-zA-Z0-9._-]{1,64}$/.test(cfg.sshUser)) return { ok: false, error: 'Not a valid address or account' };
+  const target = `${cfg.sshUser}@${cfg.host}`;
+  try {
+    if (process.platform === 'win32') {
+      const wt = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WindowsApps', 'wt.exe');
+      const p = fs.existsSync(wt)
+        ? spawn(wt, ['new-tab', '--title', `NAS (${cfg.host})`, 'ssh', target], { detached: true, stdio: 'ignore' })
+        : spawn('cmd.exe', ['/k', 'ssh', target], { detached: true, stdio: 'ignore', windowsHide: false });
+      p.unref();
+    } else {
+      spawn('x-terminal-emulator', ['-e', 'ssh', target], { detached: true, stdio: 'ignore' }).unref();
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+ipcMain.handle('open-ssh', (_e, id) => openSsh(id));
+ipcMain.handle('set-ssh-user', (_e, d) => {
+  const cfg = settings.servers.find(x => x.id === (d && d.id));
+  const u = String((d && d.user) || '').trim();
+  if (!cfg) return { ok: false, error: 'No such server' };
+  if (u && !/^[a-zA-Z0-9._-]{1,64}$/.test(u)) return { ok: false, error: 'Not a valid account name' };
+  cfg.sshUser = u; saveSettings(); updateTray();
   return { ok: true, servers: listForUi() };
 });
 ipcMain.handle('run', async (_e, d) => {

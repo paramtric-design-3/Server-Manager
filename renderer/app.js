@@ -509,6 +509,8 @@ function renderSettings() {
   $('#connToggle').hidden = !done;
   $('#connToggle').textContent = connOpen ? 'Done' : 'Change';
   $('#joinRow').classList.toggle('hidden', !ok);
+  if (document.activeElement !== $('#sshUser')) $('#sshUser').value = cur().sshUser || '';
+  $('#sshLine').textContent = cur().sshUser ? `SSH as ${cur().sshUser}` : 'SSH';
   $('#logCard').classList.toggle('hidden', !ok);
   $('#keyState').textContent = st.hasKey ? 'Key created' : 'No key yet';
   $('#key').textContent = st.hasKey ? 'Copy NAS command' : 'Create key';
@@ -542,6 +544,21 @@ async function loadLog() {
   $('#log').scrollTop = $('#log').scrollHeight;
 }
 $('#refreshLog').onclick = loadLog;
+async function saveSshUser() {
+  const u = $('#sshUser').value.trim();
+  if (u === (cur().sshUser || '')) return true;
+  const r = await api.invoke('set-ssh-user', { id: ACTIVE, user: u });
+  if (!r.ok) { toast({ title: 'Not saved', sub: r.error }); return false; }
+  SERVERS = r.servers; renderSettings(); return true;
+}
+$('#sshUser').addEventListener('change', saveSshUser);
+$('#sshUser').addEventListener('keydown', e => { if (e.key === 'Enter') { saveSshUser(); e.target.blur(); } });
+$('#openSsh').onclick = async () => {
+  if (!(await saveSshUser())) return;
+  const r = await api.invoke('open-ssh', ACTIVE);
+  if (!r.ok) { toast({ title: 'SSH not opened', sub: r.error }); if (r.needUser) $('#sshUser').focus(); }
+  else toast({ title: 'SSH opened', sub: 'Type your NAS password in the new window' });
+};
 $('#connToggle').onclick = () => { connOpen = !connOpen; renderSettings(); };
 const commitHost = async () => {
   const host = $('#host').value.trim(), user = $('#user').value.trim();
